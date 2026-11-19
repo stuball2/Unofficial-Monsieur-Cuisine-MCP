@@ -29,7 +29,8 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from ..config import MC_WEB_CHECK_INTERVAL_SECONDS
+from .. import catalogue
+from ..config import MC_CATALOGUE_SYNC_INTERVAL_SECONDS, MC_WEB_CHECK_INTERVAL_SECONDS
 from ..logging_config import setup_logging
 from . import recipe_pages, session
 from .remote_login import RemoteLogin, has_saved_credentials
@@ -166,12 +167,39 @@ async def index(request: Request) -> HTMLResponse:
 {'<a class="btn" href="/login">Login in progress…</a>' if login.running else
   '<form method="post" action="/login/go"><button>Log in</button></form>'}
 </div>
+{catalogue_card()}
 <p class="muted">Checks run every {MC_WEB_CHECK_INTERVAL_SECONDS // 3600}h and renew automatically when the session stops working{
 "; if renewal fails it signs in again with your saved details (at most every 12h)" if has_saved_credentials() and auto_login_enabled() else ""}.
 {"Log in signs in automatically with your saved details and shows you the browser only if it needs help." if has_saved_credentials() else
  "Add MC_LIDL_EMAIL / MC_LIDL_PASSWORD to ~/.config/mc-mcp.env for one-tap login."}
 MCP endpoint: <code>{html.escape(str(request.base_url))}mcp</code>{" (Bearer = this site's password)" if request.app.state.auth else " (no password)"}.</p>"""
     return page("Monsieur Cuisine MCP", body)
+
+
+def catalogue_card() -> str:
+    st = catalogue.stats()
+    p = catalogue.progress
+    last = st.get("last_sync")
+    if p.running:
+        state = (f'<span class="pill unk">Syncing: {html.escape(p.phase)} {p.done}/{p.total}</span>'
+                 if p.phase == "fetching" else f'<span class="pill unk">Syncing: {html.escape(p.phase)}…</span>')
+    elif st["recipes"]:
+        state = pill(True, f'{st["recipes"]} recipes', "")
+    else:
+        state = pill(False, "", "Empty")
+    detail = (f'Last sync {html.escape(last["finished"][:16].replace("T", " "))} UTC: {last["listed"]} listed, '
+              f'{last["fetched"]} fetched, {last["removed"]} removed, {last["errors"]} errors.' if last else "Never synced.")
+    button = "" if p.running else '<form method="post" action="/catalogue/sync"><button class="alt">Sync now</button></form>'
+    return f"""<div class="card"><div class="row"><h2>Recipe catalogue (Smart, local copy)</h2>{state}</div>
+<p class="muted" style="margin:6px 0">{detail} {st["distinct_ingredients"]} distinct ingredients. Syncs nightly; the first sync
+takes ~20 minutes (one request per second).</p>{button}</div>"""
+
+
+async def catalogue_sync_now(request: Request) -> RedirectResponse:
+    if not catalogue.progress.running:
+        asyncio.create_task(catalogue.sync())
+        await asyncio.sleep(0.2)
+    return RedirectResponse("/", status_code=303)
 
 
 async def do_check(request: Request) -> RedirectResponse:
@@ -189,7 +217,7 @@ async def do_renew(request: Request) -> RedirectResponse:
 async def status_json(request: Request) -> JSONResponse:
     login: RemoteLogin = request.app.state.login
     return JSONResponse({"session": session.session_summary(), "events": session.load_status(),
-                         "login": login.info()})
+                         "login": login.info(), "catalogue": {**catalogue.stats(), "progress": catalogue.progress.as_dict()}})
 
 
 LOGIN_JS = r"""
@@ -317,6 +345,26 @@ def maybe_auto_login(login: RemoteLogin, now: float | None = None) -> bool:
     return True
 
 
+def catalogue_sync_due(stats: dict, now: float | None = None) -> bool:
+    last = stats.get("last_sync")
+    if not stats.get("recipes") or not last:
+        return True
+    from datetime import datetime
+    age = (now or time.time()) - datetime.fromisoformat(last["finished"]).timestamp()
+    return age >= MC_CATALOGUE_SYNC_INTERVAL_SECONDS
+
+
+async def _periodic_catalogue_sync() -> None:
+    await asyncio.sleep(30)  # let the service settle after start-up
+    while True:
+        try:
+            if catalogue_sync_due(catalogue.stats()):
+                await catalogue.sync()
+        except Exception:  # noqa: BLE001 - never let the loop die
+            logger.exception("Catalogue sync failed")
+        await asyncio.sleep(3600)
+
+
 async def _periodic_check(login: RemoteLogin) -> None:
     while True:
         try:
@@ -334,6 +382,7 @@ def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = 
         Route("/check", do_check, methods=["POST"]),
         Route("/renew", do_renew, methods=["POST"]),
         Route("/status.json", status_json),
+        Route("/catalogue/sync", catalogue_sync_now, methods=["POST"]),
         Route("/healthz", healthz),
         Route("/login", login_page),
         Route("/login/start", login_start, methods=["POST"]),
@@ -354,6 +403,7 @@ def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = 
     @contextlib.asynccontextmanager
     async def lifespan(app):
         task = asyncio.create_task(_periodic_check(app.state.login)) if background else None
+        sync_task = asyncio.create_task(_periodic_catalogue_sync()) if background else None
         try:
             if mcp_app is not None:
                 async with mcp_app.lifespan(app):
@@ -361,8 +411,9 @@ def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = 
             else:
                 yield
         finally:
-            if task:
-                task.cancel()
+            for t in (task, sync_task):
+                if t:
+                    t.cancel()
             app.state.login.cancel()
 
     app = Starlette(routes=routes, lifespan=lifespan)

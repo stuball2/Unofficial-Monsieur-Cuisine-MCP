@@ -149,3 +149,17 @@ def test_auto_login_rate_limited_and_can_be_disabled(monkeypatch):
 
 def test_status_page_log_in_button_posts_to_go(client):
     assert 'action="/login/go"' in client.get("/", headers=basic(SECRET)).text
+
+
+def test_catalogue_sync_due():
+    assert web.catalogue_sync_due({"recipes": 0}) is True
+    last = {"finished": "2026-11-19T10:00:00+00:00"}
+    from datetime import datetime
+    t = datetime.fromisoformat(last["finished"]).timestamp()
+    assert web.catalogue_sync_due({"recipes": 5, "last_sync": last}, now=t + 3600) is False
+    assert web.catalogue_sync_due({"recipes": 5, "last_sync": last}, now=t + 25 * 3600) is True
+
+
+def test_status_page_shows_catalogue_card(client):
+    html = client.get("/", headers=basic(SECRET)).text
+    assert "Recipe catalogue" in html and 'action="/catalogue/sync"' in html

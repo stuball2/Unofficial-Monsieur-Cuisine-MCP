@@ -19,7 +19,7 @@ from .lifecycle import (
     publish_recipe,
     restore_recipe,
 )
-from .search import get_recipe, get_recipe_filters, search_recipes
+from .search import get_recipe, get_recipe_filters, list_recipes_page, search_recipes
 
 __all__ = [
     "MCRequestError",
@@ -32,6 +32,7 @@ __all__ = [
     "get_recipe_filters",
     "list_favorite_recipes",
     "list_my_recipes",
+    "list_recipes_page",
     "publish_recipe",
     "remove_favorite_recipe",
     "restore_recipe",

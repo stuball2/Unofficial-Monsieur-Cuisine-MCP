@@ -50,6 +50,11 @@ uv run monsieur-cuisine-mcp-web  # web UI + HTTP MCP on :8090 (needs MC_WEB_PASS
   - `session.py`: session status, health check and password-free renewal via the Lidl SSO redirect chain.
   - `remote_login.py`: headed Chrome on Xvfb, streamed to `/login` over a WebSocket using the CDP screencast. A human types.
   After a merge, `.agent-pipeline/deploy.sh` restarts the service.
+- `src/monsieur_cuisine_mcp/catalogue.py`: local SQLite copy of the Smart recipe catalogue
+  (`~/.monsieur-cuisine-mcp/catalogue.db`). Tables `recipes` (summary columns plus `detail_json`)
+  and `ingredients` (`name`, `norm` = `normalise(name)`, amount, unit, category). Nightly
+  incremental sync with one request per second. Read it with `catalogue.db()`. Never sync from
+  tests; build rows with `upsert_recipe()` instead.
 - `src/monsieur_cuisine_mcp/recipes/`:
   - `client.py`: the authenticated `/proxy-api` call plus error translation (`MCRequestError`).
   - `search.py`: public search, filters and `get_recipe` (falls back to the proxy for your own recipes).

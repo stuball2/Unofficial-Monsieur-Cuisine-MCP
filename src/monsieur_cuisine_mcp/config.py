@@ -94,3 +94,10 @@ MC_WEB_CHECK_INTERVAL_SECONDS = int(os.environ.get("MC_WEB_CHECK_HOURS", "6")) *
 MC_IMAGE_HOST_REWRITES = {
     "mc-web-user-content-cdn.tecpal.com": "mc-recipe-user-prod.b-cdn.net",
 }
+
+# Local copy of the Smart (MC3.0) recipe catalogue, for ingredient matching.
+MC_CATALOGUE_PATH = STATE_DIR / "catalogue.db"
+MC_CATALOGUE_DEVICE = "MC3.0"
+# Seconds between recipe-detail requests during a sync - be nice to the servers.
+MC_CATALOGUE_REQUEST_DELAY = float(os.environ.get("MC_CATALOGUE_DELAY", "1.0"))
+MC_CATALOGUE_SYNC_INTERVAL_SECONDS = 24 * 3600

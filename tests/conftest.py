@@ -35,6 +35,8 @@ def _isolated_home(tmp_path, monkeypatch):
     monkeypatch.setattr(auth, "STORAGE_STATE_PATH", tmp_path / "storage_state.json", raising=False)
     from monsieur_cuisine_mcp.web import session
     monkeypatch.setattr(session, "MC_WEB_STATUS_PATH", tmp_path / "web_status.json")
+    from monsieur_cuisine_mcp import catalogue
+    monkeypatch.setattr(catalogue, "MC_CATALOGUE_PATH", tmp_path / "catalogue.db")
 
 
 @pytest.fixture(autouse=True)

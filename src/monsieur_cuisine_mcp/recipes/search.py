@@ -265,3 +265,20 @@ async def get_recipe(recipe_id: str, language: str = MC_API_DEFAULT_LANGUAGE) ->
         )
     logger.debug("Fetched own recipe %s via authenticated endpoint: %r", recipe_id, recipe.get("title"))
     return data
+
+
+async def list_recipes_page(
+    page: int = 1,
+    size: int = 100,
+    device_type: str = "MC3.0",
+    language: str = MC_API_DEFAULT_LANGUAGE,
+) -> dict:
+    """One page of the full recipe listing for a device (summaries only - no
+    ingredients or steps; use get_recipe for those). Used by the local catalogue
+    sync. Public API, no authentication."""
+    url = f"{MC_API_BASE_URL}/api/v2/recipes/page/{page}/size/{size}"
+    params = httpx.QueryParams({"filters[deviceTypes][]": device_type})
+    async with httpx.AsyncClient(timeout=MC_API_REQUEST_TIMEOUT_SECONDS) as client:
+        response = await client.get(url, params=params, headers=_public_headers(language))
+    response.raise_for_status()
+    return response.json()
