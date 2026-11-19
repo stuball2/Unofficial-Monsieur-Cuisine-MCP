@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 # ------------------------------------------------------------------ normalisation
 # Bump when normalise() changes: stored `ingredients.norm` values are recomputed on next open.
-NORM_VERSION = 2
+NORM_VERSION = 3
 
 _PAREN = re.compile(r"\([^)]*\)")
 _FRACTIONS = {"¼": " 1/4", "½": " 1/2", "¾": " 3/4", "⅓": " 1/3", "⅔": " 2/3"}
@@ -79,7 +79,7 @@ _NON_WORD = re.compile(r"[^a-z0-9 ]+")
 _FILLER = {"of", "a", "an", "the", "approx", "untreated", "medium", "large", "small", "big", "sized", "mediumsized",
            "heaped", "level", "about"}
 # Kitchen equipment listed among ingredients ("loaf tin", "ovenproof dish", "paper cases").
-_EQUIPMENT = {"tin", "dish", "mould", "case", "tray", "skewer", "foil", "film", "ramekin", "cutter", "bag"}
+_EQUIPMENT = {"tin", "dish", "mould", "case", "tray", "skewer", "foil", "film", "ramekin", "cutter", "bag", "jar"}
 _NO_SINGULAR = {"asparagus", "couscous", "hummus", "molasses", "swiss", "brussels", "lemongrass", "grass",
                 "cress", "watercress", "bass", "glass", "series", "species", "oats", "chips"}
 

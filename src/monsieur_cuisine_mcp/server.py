@@ -269,8 +269,8 @@ async def remove_favorite_recipe(translation_id: int, language: str = MC_API_DEF
 
 @mcp.tool
 async def find_recipes_by_ingredients(
-    ingredients: list[str], max_missing: int | None = 3, limit: int = 20
-) -> list[dict]:
+    ingredients: list[str], max_missing: int | None = None, limit: int = 20
+) -> dict:
     """"What can I cook?" - rank recipes by how well the ingredients you have
     cover them.
 
@@ -283,16 +283,21 @@ async def find_recipes_by_ingredients(
     "(...)" notes dropped, so "Carrots" == "carrot"). An ingredient you have
     matches a recipe ingredient if they are equal or if every word of one
     appears as a whole word in the other ("tomato" matches "cherry tomato",
-    "chicken breast" matches "chicken"; "pea" does NOT match "peach").
+    "chicken breast" matches "chicken"; "pea" does NOT match "peach"), except
+    that a derived product is a different thing: "chicken" does NOT match
+    "chicken stock", nor "rice" "rice flour". Misspelt ingredients are
+    corrected against the catalogue's vocabulary and reported in
+    `spelling_corrections`.
     Pantry staples (water, salt, pepper, sugar and common oils) never count
     as missing. Only recipes using at least one of your ingredients are
-    returned, ranked by fewest missing ingredients, then the largest share of
-    the recipe covered, then rating, then name.
+    returned, ranked by how many of YOUR ingredients they use, then fewest
+    missing, then the largest share of the recipe covered, then rating.
 
     Each result has `id` (pass to get_recipe for the full recipe), `name`,
     `thumbnail`, `duration` (minutes), `rating`, `servings`, `used` and
     `missing` (ingredient names as written in the recipe) and `needed_count`
-    (non-pantry ingredients in the recipe).
+    (non-pantry ingredients in the recipe) and `mine_used` (how many of your
+    ingredients it uses). Returns {"spelling_corrections": {...}, "recipes": [...]}.
 
     Args:
         ingredients: What you have, e.g. ["chicken breast", "carrots", "rice"].
@@ -300,7 +305,11 @@ async def find_recipes_by_ingredients(
             None means no limit.
         limit: Maximum number of recipes to return.
     """
-    return await asyncio.to_thread(matching.find_recipes, ingredients, max_missing=max_missing, limit=limit)
+    def run() -> dict:
+        corrected, fixes = matching.correct_spelling(ingredients)
+        return {"spelling_corrections": fixes,
+                "recipes": matching.find_recipes(corrected, max_missing=max_missing, limit=limit)}
+    return await asyncio.to_thread(run)
 
 
 @mcp.tool

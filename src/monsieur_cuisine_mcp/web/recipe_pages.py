@@ -401,7 +401,7 @@ def _match_card(r: dict) -> str:
                else '<div class="muted">Nothing missing</div>')
     return (f'<a class="card rcard" href="/recipes/{quote(str(r.get("id")))}">{img_html}<div class="in">'
             f'<strong>{esc(r.get("name"))}</strong><div class="muted">{esc(_minutes(r.get("duration")))}'
-            f' {_rating(r)}</div><div><strong>Uses:</strong> {esc(", ".join(r["used"]))}</div>'
+            f' {_rating(r)}</div><div><strong>Uses {esc(r.get("mine_used", ""))} of yours:</strong> {esc(", ".join(r["used"]))}</div>'
             f'{missing}</div></a>')
 
 
@@ -427,9 +427,9 @@ async def cook(request: Request) -> HTMLResponse:
     have_text = qp.get("ingredients", "")
     # Pantry not submitted -> defaults; submitted empty -> no staples at all.
     pantry_text = qp["pantry"] if "pantry" in qp else ", ".join(MC_PANTRY_STAPLES)
-    mm = qp.get("max_missing", "3")
+    mm = qp.get("max_missing", "any")
     if mm not in MAX_MISSING_CHOICES:
-        mm = "3"
+        mm = "any"
     form = _cook_form(have_text, pantry_text, mm)
     title = "What can I cook?"
 
@@ -446,10 +446,13 @@ async def cook(request: Request) -> HTMLResponse:
     if not have:
         return _page(title, form + f'<p class="muted">{esc(count)} recipes in the local catalogue. '
                                    'Enter some ingredients to get started.</p>')
+    have, fixes = matching.correct_spelling(have)
+    fix_note = ("".join(f'<p class="muted">Using <strong>{esc(new)}</strong> for “{esc(old)}”.</p>'
+                        for old, new in fixes.items()))
     results = matching.find_recipes(have, pantry=split_ingredients(pantry_text),
                                     max_missing=None if mm == "any" else int(mm), limit=COOK_RESULT_LIMIT)
     cards = "".join(_match_card(r) for r in results) or \
-        '<p class="muted">No matching recipes. Try allowing more missing ingredients.</p>'
+        '<p class="muted">No matching recipes. Try allowing more missing ingredients, or check spelling.</p>'
     n = len(results)
-    return _page(title, form + f'<p class="muted">{n} recipe{"" if n == 1 else "s"} found</p>'
+    return _page(title, form + fix_note + f'<p class="muted">{n} recipe{"" if n == 1 else "s"} found</p>'
                                f'<div class="cards">{cards}</div>')

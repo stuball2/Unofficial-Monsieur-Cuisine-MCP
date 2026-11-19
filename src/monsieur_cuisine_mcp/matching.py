@@ -9,6 +9,7 @@ equal, or when every word of one appears as a whole word in the other:
 Pantry staples are stricter (see is_pantry): "pepper" covers "pepper, black,
 ground" but not "red pepper", so real vegetables still show as missing.
 """
+import difflib
 from collections.abc import Iterable
 
 from . import catalogue
@@ -25,9 +26,22 @@ def _terms(items: Iterable[str] | None) -> list[frozenset[str]]:
     return out
 
 
+# Words that turn an ingredient into a different product: having chicken doesn't
+# mean having chicken stock, and rice isn't rice flour. If either side has one of
+# these that the other lacks, they don't match.
+DERIVED = frozenset({
+    "stock", "broth", "bouillon", "powder", "flour", "starch", "sauce", "paste", "ketchup", "oil", "vinegar",
+    "syrup", "jam", "extract", "essence", "cube", "seasoning", "granule", "milk", "cream", "butter", "cake",
+    "biscuit", "crisp", "liqueur", "wine", "noodle", "jelly", "spread", "dressing", "marinade",
+})
+
+
 def words_match(a: frozenset[str], b: frozenset[str]) -> bool:
-    """True if all words of one side appear as whole words in the other."""
-    return bool(a) and bool(b) and (a <= b or b <= a)
+    """True if all words of one side appear as whole words in the other, and
+    neither side is a derived product the other isn't ("chicken" vs "chicken stock")."""
+    if not a or not b or not (a <= b or b <= a):
+        return False
+    return (a & DERIVED) == (b & DERIVED)
 
 
 def ingredient_matches(have: str, ingredient: str) -> bool:
@@ -58,14 +72,45 @@ def _matches_any(norm: str, terms: list[frozenset[str]]) -> bool:
     return any(words_match(words, t) for t in terms)
 
 
-def find_recipes(have: list[str], pantry: list[str] | None = None, max_missing: int | None = 3,
+def vocabulary() -> set[str]:
+    with catalogue.db() as conn:
+        return {w for (norm,) in conn.execute("SELECT DISTINCT norm FROM ingredients") for w in norm.split()}
+
+
+def correct_spelling(have: list[str], vocab: set[str] | None = None) -> tuple[list[str], dict[str, str]]:
+    """Fix words that appear in no recipe but closely resemble one that does
+    ("brocolli" -> "broccoli"). Returns (corrected items, {original: corrected})."""
+    vocab = vocabulary() if vocab is None else vocab
+    if not vocab:
+        return list(have), {}
+    out, fixes = [], {}
+    for item in have:
+        words = catalogue.normalise(item).split()
+        new_words = []
+        for w in words:
+            if w in vocab or len(w) < 4:
+                new_words.append(w)
+                continue
+            close = difflib.get_close_matches(w, vocab, n=1, cutoff=0.8)
+            new_words.append(close[0] if close else w)
+        fixed = " ".join(new_words)
+        if words and new_words != words:
+            fixes[item] = fixed
+            out.append(fixed)
+        else:
+            out.append(item)
+    return out, fixes
+
+
+def find_recipes(have: list[str], pantry: list[str] | None = None, max_missing: int | None = None,
                  limit: int | None = 30) -> list[dict]:
     """Rank catalogue recipes by how well `have` covers their ingredients.
 
     pantry: staples that never count as missing (None = MC_PANTRY_STAPLES, [] = none).
     max_missing: drop recipes missing more than this many ingredients (None = no limit).
-    Ranking: fewest missing, then highest share of needed ingredients covered,
-    then rating (highest first), then name.
+    Ranking: most of my ingredients used, then fewest missing, then highest share
+    of needed ingredients covered, then rating (highest first), then name.
+    Each result also has mine_used: how many of `have` the recipe uses.
     """
     have_terms = _terms(have)
     if not have_terms:
@@ -84,22 +129,29 @@ def find_recipes(have: list[str], pantry: list[str] | None = None, max_missing: 
         recipe = recipes.get(rid)
         if recipe is None:
             continue
-        used, missing, seen = [], [], set()
+        used, missing, seen, used_norms = [], [], set(), []
         for name, norm in ings:
             if not norm or norm in seen or is_pantry(norm, pantry_terms):
                 continue
             seen.add(norm)
-            (used if _matches_any(norm, have_terms) else missing).append(name)
+            if _matches_any(norm, have_terms):
+                used.append(name)
+                used_norms.append(norm)
+            else:
+                missing.append(name)
         if not used:
             continue
         if max_missing is not None and len(missing) > max_missing:
             continue
+        mine_used = sum(1 for t in have_terms if any(words_match(t, frozenset(n.split())) for n in used_norms))
         results.append({
             "id": rid, "name": recipe["name"], "thumbnail": recipe["thumbnail"],
             "duration": recipe["duration"], "rating": recipe["rating"], "servings": recipe["servings"],
             "used": used, "missing": missing, "needed_count": len(used) + len(missing),
+            "mine_used": mine_used,
         })
 
-    results.sort(key=lambda r: (len(r["missing"]), -len(r["used"]) / r["needed_count"],
+    # Most of MY ingredients used first, then fewest missing, then share covered, rating, name.
+    results.sort(key=lambda r: (-r["mine_used"], len(r["missing"]), -len(r["used"]) / r["needed_count"],
                                 -(r["rating"] or 0), (r["name"] or "").lower(), r["id"]))
     return results[:limit] if limit is not None and limit > 0 else results

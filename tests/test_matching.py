@@ -84,7 +84,7 @@ def test_result_shape(add, base_recipe):
     assert r == {"id": 800001, "name": "Test Vanilla Rice Pudding",
                  "thumbnail": "https://cdn.example.test/pudding-landscape.jpg", "duration": 40, "rating": 4.6,
                  "servings": 4, "used": ["Milk"], "missing": ["risotto rice", "vanilla extract"],
-                 "needed_count": 3}
+                 "needed_count": 3, "mine_used": 1}
 
 
 def test_pantry_staples_never_missing(add):
@@ -109,7 +109,7 @@ def test_max_missing_filter(add):
     add(2, "Four missing", ["chicken", "apple", "bean", "carrot", "dill"])
     assert names(matching.find_recipes(["chicken"], max_missing=1)) == []
     assert names(matching.find_recipes(["chicken"], max_missing=2)) == ["Two missing"]
-    assert names(matching.find_recipes(["chicken"])) == ["Two missing"]  # default 3
+    assert names(matching.find_recipes(["chicken"])) == ["Two missing", "Four missing"]  # default: no limit
     assert names(matching.find_recipes(["chicken"], max_missing=None)) == ["Two missing", "Four missing"]
 
 
@@ -126,9 +126,10 @@ def test_ranking_order(add):
     add(4, "Complete high rating", ["chicken"], rating=4.5)                 # 0 missing
     add(5, "Complete no rating", ["rice"], rating=None)                     # 0 missing
     add(6, "Alpha same", ["chicken", "rice", "cream"], rating=3.0)         # 1 missing, 67 %, tie -> name
+    # Recipes using both of my ingredients first; within that, fewest missing, share, rating, name.
     assert names(matching.find_recipes(["chicken", "rice"], max_missing=None)) == [
-        "Complete high rating", "Complete low rating", "Complete no rating",
-        "A one missing big", "Alpha same", "B one missing small"]
+        "Complete low rating", "A one missing big", "Alpha same",
+        "Complete high rating", "Complete no rating", "B one missing small"]
 
 
 def test_limit_and_empty_inputs(add):
@@ -164,7 +165,7 @@ def test_cook_page_form_defaults(client, add):
     add(1, "Soup", ["leek"])
     r = client.get("/cook", headers=AUTH)
     assert r.status_code == 200
-    assert '<option value="3" selected>3</option>' in r.text and '<option value="any">any</option>' in r.text
+    assert '<option value="any" selected>any</option>' in r.text and '<option value="3">3</option>' in r.text
     assert 'value="water, salt, pepper, black pepper, sugar, oil, olive oil' in r.text
     assert "<textarea" in r.text and "1 recipes in the local catalogue" in r.text
     assert 'href="/cook"' in r.text  # nav link
@@ -178,7 +179,7 @@ def test_cook_page_renders_results(client, add):
     assert r.status_code == 200
     assert "Tomato salad" in r.text and "Beef stew" not in r.text
     assert 'href="/recipes/1"' in r.text
-    assert "<strong>Uses:</strong> Cherry tomatoes" in r.text and "<strong>Missing:</strong> basil" in r.text
+    assert "<strong>Uses 1 of yours:</strong> Cherry tomatoes" in r.text and "<strong>Missing:</strong> basil" in r.text
     assert "https://mc-recipe-user-prod.b-cdn.net/x/salad.jpg" in r.text
     assert '<option value="1" selected>1</option>' in r.text and "1 recipe found" in r.text
 
@@ -190,7 +191,7 @@ def test_cook_page_max_missing_and_pantry_params(client, add):
     r = client.get("/cook", params={"ingredients": "tomato", "max_missing": "any", "pantry": ""}, headers=AUTH)
     assert "<strong>Missing:</strong> basil, salt" in r.text
     r = client.get("/cook", params={"ingredients": "tomato", "max_missing": "bogus"}, headers=AUTH)
-    assert '<option value="3" selected>3</option>' in r.text and "Salad" in r.text
+    assert '<option value="any" selected>any</option>' in r.text and "Salad" in r.text
 
 
 def test_cook_page_escapes_everything(client, add):
@@ -211,11 +212,12 @@ async def test_mcp_tool_matches_find_recipes(add):
     add(1, "Tomato salad", ["Cherry tomatoes", "basil", "salt"])
     add(2, "Tomato soup", ["tomato", "onion", "stock", "cream"])
     add(3, "Peach crumble", ["peach", "flour"])
-    expected = matching.find_recipes(["tomato"], max_missing=3, limit=20)
+    expected = matching.find_recipes(["tomato"], limit=20)
     assert names(expected) == ["Tomato salad", "Tomato soup"]
-    assert await server.find_recipes_by_ingredients(["tomato"]) == expected
-    assert await server.find_recipes_by_ingredients(["tomato"], max_missing=1, limit=5) == \
-        matching.find_recipes(["tomato"], max_missing=1, limit=5)
+    assert await server.find_recipes_by_ingredients(["tomato"]) == {"spelling_corrections": {}, "recipes": expected}
+    out = await server.find_recipes_by_ingredients(["tomatto"], max_missing=1, limit=5)
+    assert out["spelling_corrections"] == {"tomatto": "tomato"}
+    assert out["recipes"] == matching.find_recipes(["tomato"], max_missing=1, limit=5)
 
 
 async def test_mcp_tool_is_registered():
@@ -240,3 +242,27 @@ def test_equipment_lines_are_ignored(add):
     add(1, "Loaf", ["flour", "loaf tin (approx. 30 cm long)", "butter for the tin"])
     [r] = matching.find_recipes(["flour", "butter"], max_missing=0)
     assert r["needed_count"] == 2
+
+
+def test_derived_products_are_different_things(add):
+    add(1, "Stock soup", ["chicken stock", "noodles"])
+    add(2, "Roast", ["chicken", "potatoes"])
+    add(3, "Pancakes", ["rice flour", "milk"])
+    assert names(matching.find_recipes(["chicken"])) == ["Roast"]
+    assert names(matching.find_recipes(["chicken stock"])) == ["Stock soup"]
+    assert names(matching.find_recipes(["rice"])) == []
+    assert matching.ingredient_matches("chicken breast", "chicken")      # still a match
+    assert not matching.ingredient_matches("coconut", "coconut milk")
+
+
+def test_spelling_correction_uses_catalogue_vocabulary(add):
+    add(1, "Greens", ["broccoli", "leeks", "chicken breast fillets"])
+    fixed, fixes = matching.correct_spelling(["brocolli", "leek", "chiken breast", "kumquat", "egg"])
+    assert fixes == {"brocolli": "broccoli", "chiken breast": "chicken breast"}
+    assert fixed == ["broccoli", "leek", "chicken breast", "kumquat", "egg"]
+
+
+def test_cook_page_reports_spelling_fix(client, add):
+    add(1, "Greens", ["broccoli", "garlic"])
+    r = client.get("/cook", params={"ingredients": "brocolli"}, headers=AUTH)
+    assert "Using <strong>broccoli</strong> for “brocolli”" in r.text and "Greens" in r.text
