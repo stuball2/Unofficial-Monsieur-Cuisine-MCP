@@ -10,13 +10,13 @@ Everything that comes from the API is untrusted and goes through html.escape.
 import html
 import logging
 import re
-from urllib.parse import parse_qs, quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from .. import auth, recipes
-from ..config import MC_API_DEFAULT_LANGUAGE
+from ..config import MC_API_DEFAULT_LANGUAGE, MC_IMAGE_HOST_REWRITES
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,15 @@ def _image(recipe: dict, *keys: str) -> str | None:
     for key in keys:
         url = (recipe.get(key) or {}).get("landscape")
         if url:
-            return url
+            return rewrite_image_host(url)
     return None
+
+
+def rewrite_image_host(url: str) -> str:
+    """Serve images from a host with a valid certificate (see MC_IMAGE_HOST_REWRITES)."""
+    parts = urlsplit(url)
+    target = MC_IMAGE_HOST_REWRITES.get(parts.hostname or "")
+    return urlunsplit(parts._replace(netloc=target)) if target and parts.scheme == "https" else url
 
 
 def _safe_url(url) -> str | None:

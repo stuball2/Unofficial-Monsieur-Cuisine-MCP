@@ -85,3 +85,12 @@ MC_WEB_BROWSER_LOCALE = "en-GB"
 MC_WEB_STATUS_PATH = STATE_DIR / "web_status.json"
 # How often the web service checks the session (and renews it if needed).
 MC_WEB_CHECK_INTERVAL_SECONDS = int(os.environ.get("MC_WEB_CHECK_HOURS", "6")) * 3600
+
+# Image hosts whose own certificate is broken, mapped to the CDN origin serving the
+# same files with a valid certificate. mc-web-user-content-cdn.tecpal.com (community
+# recipe images) is a CNAME for Bunny CDN zone mc-recipe-user-prod.b-cdn.net; its
+# custom-domain certificate expired 2026-11-17 while *.b-cdn.net stays valid.
+# Remove the entry once Tecpal renews it.
+MC_IMAGE_HOST_REWRITES = {
+    "mc-web-user-content-cdn.tecpal.com": "mc-recipe-user-prod.b-cdn.net",
+}
