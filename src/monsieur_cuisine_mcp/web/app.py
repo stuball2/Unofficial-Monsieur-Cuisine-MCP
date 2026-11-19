@@ -31,7 +31,9 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from ..config import MC_WEB_CHECK_INTERVAL_SECONDS
 from ..logging_config import setup_logging
 from . import session
-from .remote_login import RemoteLogin
+from .remote_login import RemoteLogin, has_saved_credentials
+
+AUTO_LOGIN_MIN_INTERVAL = 12 * 3600  # background auto-login at most this often
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +162,13 @@ async def index(request: Request) -> HTMLResponse:
 <div class="card row" style="justify-content:flex-start">
 <form method="post" action="/check"><button class="alt">Check now</button></form>
 <form method="post" action="/renew"><button class="alt">Renew (no password)</button></form>
-<a class="btn" href="/login">{"Login in progress…" if login.running else "Log in"}</a>
+{'<a class="btn" href="/login">Login in progress…</a>' if login.running else
+  '<form method="post" action="/login/go"><button>Log in</button></form>'}
 </div>
-<p class="muted">Checks run every {MC_WEB_CHECK_INTERVAL_SECONDS // 3600}h and renew automatically when the session stops working.
+<p class="muted">Checks run every {MC_WEB_CHECK_INTERVAL_SECONDS // 3600}h and renew automatically when the session stops working{
+"; if renewal fails it signs in again with your saved details (at most every 12h)" if has_saved_credentials() and auto_login_enabled() else ""}.
+{"Log in signs in automatically with your saved details and shows you the browser only if it needs help." if has_saved_credentials() else
+ "Add MC_LIDL_EMAIL / MC_LIDL_PASSWORD to ~/.config/mc-mcp.env for one-tap login."}
 MCP endpoint: <code>{html.escape(str(request.base_url))}mcp</code>{" (Bearer = this site's password)" if request.app.state.auth else " (no password)"}.</p>"""
     return page("Monsieur Cuisine MCP", body)
 
@@ -193,7 +199,7 @@ function connect(){
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.type==='frame'){img.src='data:image/jpeg;base64,'+m.data;}
     else if(m.type==='status'){state=m.state; st.textContent=m.message||m.state; st.className='pill '+(m.state==='success'?'ok':m.state==='failed'||m.state==='cancelled'?'bad':'unk');
-      url.textContent=m.url?new URL(m.url).host:''; $('#start').hidden=['starting','waiting'].includes(m.state); $('#cancel').hidden=!$('#start').hidden;
+      url.textContent=m.url?new URL(m.url).host:''; $('#start').hidden=['starting','auto','waiting'].includes(m.state); $('#cancel').hidden=!$('#start').hidden;
       if(m.state==='success') setTimeout(()=>location.href='/',2500);}};
   ws.onclose=()=>setTimeout(connect,2000);
 }
@@ -235,7 +241,7 @@ async def login_page(request: Request) -> HTMLResponse:
 <p class="muted" style="margin:8px 0 0">This is a real Chrome running on the server. Tap fields, then type with the box below.
 Nothing is typed for you, and your password isn't stored, only the resulting session.</p></div>
 <div class="row" style="justify-content:flex-start;margin-bottom:8px">
-<button id="start">Start login</button><button id="cancel" class="warn" hidden>Cancel</button>
+<button id="start">{"Sign in automatically" if has_saved_credentials() else "Start login"}</button><button id="cancel" class="warn" hidden>Cancel</button>
 <button id="back" class="alt">◀ Back</button><button id="reload" class="alt">↻ Reload</button><a class="btn" style="background:#4b5563" href="/">Status</a></div>
 <img id="screen" alt="" style="width:100%;border:1px solid var(--line);border-radius:8px;background:#000;min-height:200px;touch-action:none;user-select:none;-webkit-user-select:none" draggable="false">
 <div class="card" style="margin-top:8px"><input id="kb" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
@@ -253,8 +259,14 @@ async def login_start(request: Request) -> JSONResponse:
     except ValueError:
         body = {}
     login: RemoteLogin = request.app.state.login
-    login.start(int(body.get("width", 1024)), int(body.get("height", 800)))
+    login.start(int(body.get("width", 1024)), int(body.get("height", 800)), auto=bool(body.get("auto", True)))
     return JSONResponse(login.info())
+
+
+async def login_go(request: Request) -> RedirectResponse:
+    """Status-page Log in button: start (automatic if possible) and show the live view."""
+    request.app.state.login.start(1024, 800, auto=True)
+    return RedirectResponse("/login", status_code=303)
 
 
 async def login_cancel(request: Request) -> JSONResponse:
@@ -281,10 +293,34 @@ async def healthz(request: Request) -> JSONResponse:
 
 
 # ------------------------------------------------------------------ app
-async def _periodic_check() -> None:
+def auto_login_enabled() -> bool:
+    return os.environ.get("MC_WEB_AUTO_LOGIN", "1") == "1"
+
+
+def maybe_auto_login(login: RemoteLogin, now: float | None = None) -> bool:
+    """After a failed check + renewal, sign in again unattended - conservatively:
+    only with saved credentials, never while a login runs, at most every 12h."""
+    status = session.load_status()
+    if (status.get("check") or {}).get("ok") or login.running:
+        return False
+    if not (auto_login_enabled() and has_saved_credentials()):
+        return False
+    last = status.get("auto_login")
+    if last:
+        from datetime import datetime
+        age = (now or time.time()) - datetime.fromisoformat(last["at"]).timestamp()
+        if age < AUTO_LOGIN_MIN_INTERVAL:
+            return False
+    session.record("auto_login", True, "Session expired and renewal failed - started automatic sign-in.")
+    login.start(1024, 800, auto=True)
+    return True
+
+
+async def _periodic_check(login: RemoteLogin) -> None:
     while True:
         try:
             await session.check_and_heal()
+            maybe_auto_login(login)
         except Exception:  # noqa: BLE001 - never let the loop die
             logger.exception("Periodic session check failed")
         await asyncio.sleep(MC_WEB_CHECK_INTERVAL_SECONDS)
@@ -300,6 +336,7 @@ def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = 
         Route("/healthz", healthz),
         Route("/login", login_page),
         Route("/login/start", login_start, methods=["POST"]),
+        Route("/login/go", login_go, methods=["POST"]),
         Route("/login/cancel", login_cancel, methods=["POST"]),
         WebSocketRoute("/login/ws", login_ws),
     ]
@@ -311,7 +348,7 @@ def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = 
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
-        task = asyncio.create_task(_periodic_check()) if background else None
+        task = asyncio.create_task(_periodic_check(app.state.login)) if background else None
         try:
             if mcp_app is not None:
                 async with mcp_app.lifespan(app):

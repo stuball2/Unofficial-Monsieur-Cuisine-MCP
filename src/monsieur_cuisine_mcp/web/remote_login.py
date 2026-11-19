@@ -11,6 +11,7 @@ When the Monsieur Cuisine session cookie appears, the browser state is saved
 """
 import asyncio
 import json
+import re
 import logging
 import os
 import shutil
@@ -68,6 +69,14 @@ _FOCUS_EMPTY_FIELD_JS = """(sel) => {
 }"""
 
 
+NEXT_BUTTON = r"^\s*(next|continue)\s*$"
+SIGN_IN_BUTTON = r"^\s*(sign in|log in|login)\s*$"  # anchored: must not match "Login via phone"
+
+
+def has_saved_credentials() -> bool:
+    return bool(saved_credential("email") and saved_credential("password"))
+
+
 def clamp_size(width: int, height: int) -> tuple[int, int]:
     """Viewport size for the remote browser, based on the visitor's screen.
     Chrome won't make windows narrower than ~500px, and huge ones waste bandwidth."""
@@ -116,7 +125,8 @@ class RemoteLogin:
     """One login session at a time, shared by every connected viewer."""
 
     def __init__(self) -> None:
-        self.state = "idle"        # idle | starting | waiting | success | failed | cancelled
+        self.state = "idle"        # idle | starting | auto | waiting | success | failed | cancelled
+        self.auto = False
         self.message = ""
         self.url = ""
         self.started_at = 0.0
@@ -137,9 +147,12 @@ class RemoteLogin:
         return {"type": "status", "state": self.state, "message": self.message, "url": self.url}
 
     # ------------------------------------------------------------ lifecycle
-    def start(self, width: int, height: int) -> None:
+    def start(self, width: int, height: int, auto: bool = False) -> None:
+        """auto=True signs in with the saved email/password and only hands over
+        to the human if something unexpected appears (OTP, error, challenge)."""
         if self.running:
             return
+        self.auto = auto and has_saved_credentials()
         self._cancel = asyncio.Event()
         self.state, self.message, self.url = "starting", "Starting browser…", ""
         self._last_frame, self._meta = None, {}
@@ -209,7 +222,12 @@ class RemoteLogin:
         page = context.pages[0] if context.pages else await context.new_page()
         await self._attach(page)
         await page.goto(MC_SSO_LOGIN_URL, wait_until="domcontentloaded", timeout=45000)
-        await self._set("waiting", "Sign in to your Lidl account in the window below.")
+        if self.auto:
+            await self._set("auto", "Signing in automatically…")
+            if not await self._auto_login(context, page):
+                await self._set("waiting", "Automatic sign-in needs your help - please take over in the window below.")
+        else:
+            await self._set("waiting", "Sign in to your Lidl account in the window below.")
 
         deadline = time.monotonic() + MC_AUTHENTICATION_TIMEOUT_SECONDS
         while True:
@@ -228,8 +246,56 @@ class RemoteLogin:
 
         await asyncio.sleep(3)  # let the post-login redirects finish setting cookies
         session.save_storage_state(await context.storage_state())
-        session.record("login", True, "Logged in via web interface.")
+        session.record("login", True, "Logged in automatically." if self.auto and self.state == "auto"
+                       else "Logged in via web interface.")
         await self._set("success", "Logged in - session saved.")
+        await session.check_session()
+
+    async def _session_appeared(self, context, seconds: float) -> bool:
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if auth._has_session_cookie(await context.cookies()):
+                return True
+            await asyncio.sleep(1)
+        return False
+
+    async def _press(self, key: str) -> None:
+        for ev in key_events(key):
+            await self._cdp.send("Input.dispatchKeyEvent", ev)
+
+    @staticmethod
+    async def _click_button(page, pattern: str) -> bool:
+        button = page.get_by_role("button", name=re.compile(pattern, re.I)).first
+        try:
+            await button.click(timeout=5000)
+            return True
+        except PlaywrightError:
+            return False
+
+    async def _auto_login(self, context, page) -> bool:
+        """Email → Next → password → Sign in, in the real browser. Returns False
+        (hand over to the human) at the first step that doesn't go as expected."""
+        email = page.locator(AUTOFILL_SELECTORS["email"]).first
+        password = page.locator(AUTOFILL_SELECTORS["password"]).first
+        try:
+            await email.wait_for(state="visible", timeout=20000)
+            await self._autofill()
+            await self._press("Enter")
+            try:
+                await password.wait_for(state="visible", timeout=6000)
+            except PlaywrightError:
+                await self._click_button(page, NEXT_BUTTON)
+                await password.wait_for(state="visible", timeout=15000)
+            await self._autofill()
+            await self._press("Enter")
+            if await self._session_appeared(context, 12):
+                return True
+            if not await self._click_button(page, SIGN_IN_BUTTON):
+                return False
+            return await self._session_appeared(context, 30)
+        except (PlaywrightError, TimeoutError) as e:
+            logger.info("Automatic sign-in stopped: %s", e)
+            return False
 
     async def _autofill(self) -> None:
         """Type the saved email/password into Lidl's fields when they appear empty.
@@ -310,7 +376,7 @@ class RemoteLogin:
 
     async def handle_input(self, msg: dict) -> None:
         cdp = self._cdp
-        if not cdp or self.state != "waiting":
+        if not cdp or self.state not in ("waiting", "auto"):
             return
         kind = msg.get("type")
         try:

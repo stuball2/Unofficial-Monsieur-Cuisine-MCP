@@ -32,7 +32,7 @@ def test_basic_and_bearer_accepted(client):
 
 def test_status_page_when_logged_out(client):
     r = client.get("/", headers=basic(SECRET))
-    assert "Not logged in" in r.text and 'href="/login"' in r.text
+    assert "Not logged in" in r.text and 'action="/login/go"' in r.text
 
 
 def test_login_page_embeds_signed_ws_token(client):
@@ -106,3 +106,46 @@ async def test_fill_inserts_saved_value_into_remote_browser(monkeypatch):
     await login.handle_input({"type": "fill", "field": "password"})
     await login.handle_input({"type": "fill", "field": "bogus"})
     assert sent == [("Input.insertText", {"text": "hunter2-secret"})]
+
+
+class FakeLogin:
+    running = False
+
+    def __init__(self):
+        self.started = []
+
+    def start(self, w, h, auto=False):
+        self.started.append(auto)
+
+
+def test_auto_login_needs_creds_and_failed_check(monkeypatch):
+    from monsieur_cuisine_mcp.web import session
+    login = FakeLogin()
+    monkeypatch.delenv("MC_LIDL_EMAIL", raising=False)
+    monkeypatch.delenv("MC_LIDL_PASSWORD", raising=False)
+    session.record("check", False, "expired")
+    assert web.maybe_auto_login(login) is False          # no saved credentials
+    monkeypatch.setenv("MC_LIDL_EMAIL", "me@example.test")
+    monkeypatch.setenv("MC_LIDL_PASSWORD", "pw")
+    session.record("check", True, "fine")
+    assert web.maybe_auto_login(login) is False          # session is healthy
+    session.record("check", False, "expired")
+    assert web.maybe_auto_login(login) is True and login.started == [True]
+
+
+def test_auto_login_rate_limited_and_can_be_disabled(monkeypatch):
+    import time as _t
+    from monsieur_cuisine_mcp.web import session
+    monkeypatch.setenv("MC_LIDL_EMAIL", "me@example.test")
+    monkeypatch.setenv("MC_LIDL_PASSWORD", "pw")
+    session.record("check", False, "expired")
+    login = FakeLogin()
+    assert web.maybe_auto_login(login) is True
+    assert web.maybe_auto_login(login) is False                                   # within 12h
+    assert web.maybe_auto_login(login, now=_t.time() + 13 * 3600) is True         # after 12h
+    monkeypatch.setenv("MC_WEB_AUTO_LOGIN", "0")
+    assert web.maybe_auto_login(login, now=_t.time() + 30 * 3600) is False
+
+
+def test_status_page_log_in_button_posts_to_go(client):
+    assert 'action="/login/go"' in client.get("/", headers=basic(SECRET)).text
