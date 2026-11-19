@@ -54,6 +54,20 @@ def saved_credential(field: str) -> str:
             "password": os.environ.get("MC_LIDL_PASSWORD", "")}.get(field, "")
 
 
+# Lidl's sign-in asks for the email first, then (after "Next") the password.
+AUTOFILL_SELECTORS = {
+    "email": "#input-email, input[type=email], input[autocomplete=username]",
+    "password": "input[type=password]",
+}
+# Focus the first visible, editable, still-empty match; report whether we did.
+_FOCUS_EMPTY_FIELD_JS = """(sel) => {
+  const el = [...document.querySelectorAll(sel)].find(e => e.offsetParent !== null && !e.disabled && !e.readOnly);
+  if (!el || el.value) return false;
+  el.focus();
+  return true;
+}"""
+
+
 def clamp_size(width: int, height: int) -> tuple[int, int]:
     """Viewport size for the remote browser, based on the visitor's screen.
     Chrome won't make windows narrower than ~500px, and huge ones waste bandwidth."""
@@ -113,6 +127,7 @@ class RemoteLogin:
         self._meta: dict = {}
         self._last_frame: str | None = None
         self._page = None
+        self._filled: set[str] = set()
 
     @property
     def running(self) -> bool:
@@ -128,6 +143,7 @@ class RemoteLogin:
         self._cancel = asyncio.Event()
         self.state, self.message, self.url = "starting", "Starting browser…", ""
         self._last_frame, self._meta = None, {}
+        self._filled = set()
         self.started_at = time.time()
         self._task = asyncio.create_task(self._run(*clamp_size(width, height)))
 
@@ -204,6 +220,7 @@ class RemoteLogin:
                 break
             if time.monotonic() > deadline:
                 raise TimeoutError(f"No login within {MC_AUTHENTICATION_TIMEOUT_SECONDS // 60} minutes.")
+            await self._autofill()
             if self._page and self._page.url != self.url:
                 self.url = self._page.url
                 await self._broadcast(self.info())
@@ -213,6 +230,29 @@ class RemoteLogin:
         session.save_storage_state(await context.storage_state())
         session.record("login", True, "Logged in via web interface.")
         await self._set("success", "Logged in - session saved.")
+
+    async def _autofill(self) -> None:
+        """Type the saved email/password into Lidl's fields when they appear empty.
+
+        Each field is filled at most once per login attempt, so a field the user
+        clears (e.g. to use a different account) stays clear. Never presses
+        Next / Sign in - the user does that.
+        """
+        page, cdp = self._page, self._cdp
+        if not page or not cdp:
+            return
+        for field, selector in AUTOFILL_SELECTORS.items():
+            value = saved_credential(field)
+            if not value or field in self._filled:
+                continue
+            try:
+                if await page.evaluate(_FOCUS_EMPTY_FIELD_JS, selector):
+                    await cdp.send("Input.insertText", {"text": value})
+                    self._filled.add(field)
+                    await self._broadcast({**self.info(), "message": f"Filled in your saved {field}. "
+                                           + ("Press Next." if field == "email" else "Press Sign in.")})
+            except PlaywrightError:
+                pass  # page mid-navigation; try again next poll
 
     # ------------------------------------------------------------ screen streaming
     async def _attach(self, page) -> None:
