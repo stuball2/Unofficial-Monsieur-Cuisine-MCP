@@ -53,7 +53,7 @@ def names(results):
     ("pea", "peach", False),
     ("pea", "peanut", False),
     ("peas", "Peaches", False),
-    ("pea", "peas", False),  # "peas" isn't singularised by normalise
+    ("pea", "peas", True),
     ("red onion", "spring onion", False),
     ("", "salt", False),
 ])
@@ -92,8 +92,9 @@ def test_pantry_staples_never_missing(add):
     [r] = matching.find_recipes(["egg"], max_missing=0)
     assert r["missing"] == [] and r["needed_count"] == 1
     # Custom pantry replaces the defaults; an empty pantry means nothing is assumed.
+    # Pantry matching is strict: "oil" covers oil, not "olive oil".
     [r] = matching.find_recipes(["egg"], pantry=["oil"], max_missing=None)
-    assert r["missing"] == ["Salt", "black pepper", "Water"]
+    assert r["missing"] == ["olive oil", "Salt", "black pepper", "Water"]
     [r] = matching.find_recipes(["egg"], pantry=[], max_missing=None)
     assert r["needed_count"] == 5
 
@@ -105,7 +106,7 @@ def test_only_pantry_matches_do_not_count_as_used(add):
 
 def test_max_missing_filter(add):
     add(1, "Two missing", ["chicken", "leek", "cream"])
-    add(2, "Four missing", ["chicken", "a", "b", "c", "d"])
+    add(2, "Four missing", ["chicken", "apple", "bean", "carrot", "dill"])
     assert names(matching.find_recipes(["chicken"], max_missing=1)) == []
     assert names(matching.find_recipes(["chicken"], max_missing=2)) == ["Two missing"]
     assert names(matching.find_recipes(["chicken"])) == ["Two missing"]  # default 3
@@ -220,3 +221,22 @@ async def test_mcp_tool_matches_find_recipes(add):
 async def test_mcp_tool_is_registered():
     tool = await server.mcp.get_tool("find_recipes_by_ingredients")
     assert tool is not None and "local copy" in tool.description and "en-US" in tool.description
+
+
+def test_pantry_pepper_does_not_hide_red_peppers(add):
+    add(1, "Stuffed peppers", ["1 red pepper (200 g)", "peppers, yellow", "pepper, black, ground",
+                               "2 pinches of pepper", "salt to taste", "rice", "cayenne pepper, ground"])
+    [r] = matching.find_recipes(["rice"], max_missing=None)
+    assert r["missing"] == ["1 red pepper (200 g)", "peppers, yellow", "cayenne pepper, ground"]
+
+
+def test_pantry_water_does_not_hide_coconut_water(add):
+    add(1, "Smoothie", ["banana", "coconut water", "cold water"])
+    [r] = matching.find_recipes(["banana"], max_missing=None)
+    assert r["missing"] == ["coconut water"]
+
+
+def test_equipment_lines_are_ignored(add):
+    add(1, "Loaf", ["flour", "loaf tin (approx. 30 cm long)", "butter for the tin"])
+    [r] = matching.find_recipes(["flour", "butter"], max_missing=0)
+    assert r["needed_count"] == 2

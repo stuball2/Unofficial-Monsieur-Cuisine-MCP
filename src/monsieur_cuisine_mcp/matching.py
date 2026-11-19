@@ -5,6 +5,9 @@ no punctuation). Something I have matches a recipe ingredient when the two are
 equal, or when every word of one appears as a whole word in the other:
 "tomato" matches "cherry tomato" and "chicken breast" matches "chicken", but
 "pea" does not match "peach" or "peanut".
+
+Pantry staples are stricter (see is_pantry): "pepper" covers "pepper, black,
+ground" but not "red pepper", so real vegetables still show as missing.
 """
 from collections.abc import Iterable
 
@@ -31,6 +34,23 @@ def ingredient_matches(have: str, ingredient: str) -> bool:
     """Public helper: does `have` match recipe ingredient `ingredient`?"""
     return words_match(frozenset(catalogue.normalise(have).split()),
                        frozenset(catalogue.normalise(ingredient).split()))
+
+
+# Words that don't change what a staple is: "pepper, black, ground" is still pepper,
+# "cold water" is still water - but "red pepper" or "coconut water" are not.
+PANTRY_DESCRIPTORS = frozenset({
+    "black", "white", "ground", "freshly", "fresh", "fine", "coarse", "sea", "table", "cold", "warm", "hot",
+    "lukewarm", "boiling", "tap", "iodised", "iodized", "refined", "granulated", "caster", "extra", "virgin",
+    "coldpressed", "neutral", "flavourless", "mill", "crushed", "cracked", "from", "for", "some", "little", "bit", "more", "pinch",
+})
+
+
+def is_pantry(norm: str, pantry_terms: list[frozenset[str]]) -> bool:
+    """A recipe ingredient is a pantry staple only if, ignoring harmless descriptors,
+    it IS the staple (unlike the looser have-matching used for my ingredients)."""
+    words = frozenset(norm.split())
+    core = words - PANTRY_DESCRIPTORS
+    return any(core == t or words == t for t in pantry_terms)
 
 
 def _matches_any(norm: str, terms: list[frozenset[str]]) -> bool:
@@ -66,7 +86,7 @@ def find_recipes(have: list[str], pantry: list[str] | None = None, max_missing: 
             continue
         used, missing, seen = [], [], set()
         for name, norm in ings:
-            if not norm or norm in seen or _matches_any(norm, pantry_terms):
+            if not norm or norm in seen or is_pantry(norm, pantry_terms):
                 continue
             seen.add(norm)
             (used if _matches_any(norm, have_terms) else missing).append(name)

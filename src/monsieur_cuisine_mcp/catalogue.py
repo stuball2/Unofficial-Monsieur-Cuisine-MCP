@@ -64,13 +64,32 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 
 # ------------------------------------------------------------------ normalisation
+# Bump when normalise() changes: stored `ingredients.norm` values are recomputed on next open.
+NORM_VERSION = 2
+
 _PAREN = re.compile(r"\([^)]*\)")
+_FRACTIONS = {"¼": " 1/4", "½": " 1/2", "¾": " 3/4", "⅓": " 1/3", "⅔": " 2/3"}
+# Trailing notes that say nothing about what the ingredient is.
+_TAIL = re.compile(r"\b(to taste|of your choice|at room temperature|for (the|a|greasing|frying|dusting|decorat\w*|serving|garnish\w*)\b.*"
+                   r"|from (a|the) (tin|jar|can|tin/jar)\b.*|in one piece)\b.*$")
+_UNITS = ("g|kg|mg|ml|l|cl|dl|tbsp|tsp|cup|cups|pinch|pinches|stalk|stalks|sprig|sprigs|clove|cloves|handful|handfuls"
+          "|bunch|bunches|can|cans|tin|tins|slice|slices|piece|pieces|pack|packs|packet|packets|sheet|sheets|knob|dash|drop|drops")
+_QUANTITY = re.compile(r"^\s*(?:approx\.?\s*)?[\d.,/\- ]+\s*(?:(?:heaped|level|big|small|large)\s+)?(?:(?:%s)\b\.?\s*)?(?:of\s+)?" % _UNITS)
 _NON_WORD = re.compile(r"[^a-z0-9 ]+")
+_FILLER = {"of", "a", "an", "the", "approx", "untreated", "medium", "large", "small", "big", "sized", "mediumsized",
+           "heaped", "level", "about"}
+# Kitchen equipment listed among ingredients ("loaf tin", "ovenproof dish", "paper cases").
+_EQUIPMENT = {"tin", "dish", "mould", "case", "tray", "skewer", "foil", "film", "ramekin", "cutter", "bag"}
 _NO_SINGULAR = {"asparagus", "couscous", "hummus", "molasses", "swiss", "brussels", "lemongrass", "grass",
-                "cress", "watercress", "bass", "glass", "series", "species", "chips", "oats", "peas"}
+                "cress", "watercress", "bass", "glass", "series", "species", "oats", "chips"}
+
+
+_IRREGULAR = {"leaves": "leaf", "halves": "half", "loaves": "loaf", "knives": "knife", "calves": "calf"}
 
 
 def _singular(word: str) -> str:
+    if word in _IRREGULAR:
+        return _IRREGULAR[word]
     if len(word) <= 3 or word in _NO_SINGULAR or word.endswith(("ss", "us", "is")):
         return word
     if word.endswith("ies"):
@@ -85,13 +104,40 @@ def _singular(word: str) -> str:
 
 
 def normalise(name: str | None) -> str:
-    """Lower-case, drop "(…)" notes and anything after a comma, strip punctuation,
-    singularise each word: "Cherry tomatoes (ripe), halved" -> "cherry tomato"."""
+    """Reduce an ingredient line to the words that identify it, for matching.
+
+    "450 ml milk (fresh whole milk, 3.8% fat)" -> "milk"
+    "2 pinches of pepper" -> "pepper"; "pepper, black, ground" -> "pepper black ground"
+    "peppers, red" -> "pepper red"; "butter for the tin" -> "butter"
+    "loaf tin (approx. 30 cm long)" -> "" (equipment, not an ingredient)
+    Word order isn't meaningful: matching compares word sets.
+    """
     if not name:
         return ""
-    text = _PAREN.sub(" ", name.lower()).split(",")[0]
-    words = _NON_WORD.sub(" ", text).split()
-    return " ".join(_singular(w) for w in words)
+    text = name.lower()
+    for frac, rep in _FRACTIONS.items():
+        text = text.replace(frac, rep)
+    text = _PAREN.sub(" ", text)
+    words: list[str] = []
+    for part in text.split(","):
+        part = _TAIL.sub("", _QUANTITY.sub("", part.strip()))
+        words += [w for w in _NON_WORD.sub(" ", part.replace("-", "")).split() if not w.isdigit()]
+    words = [_singular(w) for w in words if w not in _FILLER]
+    if words and words[-1] in _EQUIPMENT or "paper case" in " ".join(words):
+        return ""
+    seen: list[str] = []
+    for w in words:
+        if w not in seen:
+            seen.append(w)
+    return " ".join(seen)
+
+
+def renormalise(conn: sqlite3.Connection) -> int:
+    """Recompute stored norms after normalise() changed (no re-download needed)."""
+    rows = conn.execute("SELECT recipe_id, position, name FROM ingredients").fetchall()
+    conn.executemany("UPDATE ingredients SET norm=? WHERE recipe_id=? AND position=?",
+                     [(normalise(r["name"]), r["recipe_id"], r["position"]) for r in rows])
+    return len(rows)
 
 
 # ------------------------------------------------------------------ storage
@@ -111,6 +157,11 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    row = conn.execute("SELECT value FROM meta WHERE key='norm_version'").fetchone()
+    if row is None or json.loads(row["value"]) != NORM_VERSION:
+        renormalise(conn)
+        set_meta(conn, norm_version=NORM_VERSION)
+        conn.commit()
     return conn
 
 

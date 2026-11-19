@@ -9,13 +9,26 @@ LIST_URL = f"{MC_API_BASE_URL}/api/v2/recipes/page/1/size/100"
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("Cherry tomatoes (ripe), halved", "cherry tomato"),
+    ("Cherry tomatoes (ripe), halved", "cherry tomato halved"),
     ("Carrots", "carrot"),
     ("Potatoes", "potato"),
     ("Berries", "berry"),
     ("Peaches", "peach"),
     ("asparagus", "asparagus"),
-    ("Swiss chard leaves", "swiss chard leave"),
+    ("Swiss chard leaves", "swiss chard leaf"),
+    ("450 ml milk (fresh whole milk, 3.8% fat)", "milk"),
+    ("2 pinches of pepper", "pepper"),
+    ("pepper, black, ground", "pepper black ground"),
+    ("1 red pepper (200 g)", "red pepper"),
+    ("½ tsp salt", "salt"),
+    ("salt to taste", "salt"),
+    ("butter for the tin", "butter"),
+    ("100 g frozen peas", "frozen pea"),
+    ("1 medium-sized onion (75 g)", "onion"),
+    ("chickpeas from a tin/jar", "chickpea"),
+    ("loaf tin (approx. 30 cm long)", ""),
+    ("ovenproof dish (approx. 20 x 30 cm)", ""),
+    ("paper cases for the tin", ""),
     ("risotto rice", "risotto rice"),
     ("Milk", "milk"),
     (None, ""),
@@ -83,3 +96,13 @@ async def test_failed_recipe_is_counted_and_sync_continues(mock_http, load_fixtu
     detail_route(mock_http, a)
     result = await catalogue.sync(delay=0)
     assert result["errors"] == 1 and result["fetched"] == 1
+
+
+def test_stored_norms_are_recomputed_when_normaliser_changes(load_fixture, monkeypatch):
+    recipe = load_fixture("mc3-en-recipe.json")["data"]["recipe"]
+    with catalogue.db() as conn:
+        catalogue.upsert_recipe(conn, recipe)
+        conn.execute("UPDATE ingredients SET norm='stale'")
+        catalogue.set_meta(conn, norm_version=catalogue.NORM_VERSION - 1)
+    with catalogue.db() as conn:
+        assert conn.execute("SELECT norm FROM ingredients WHERE position=0").fetchone()[0] == "milk"

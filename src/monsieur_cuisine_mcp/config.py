@@ -107,5 +107,5 @@ MC_CATALOGUE_SYNC_INTERVAL_SECONDS = 24 * 3600
 # (see matching.py), so e.g. "oil" also covers "olive oil".
 MC_PANTRY_STAPLES = (
     "water", "salt", "pepper", "black pepper", "sugar", "oil", "olive oil",
-    "vegetable oil", "sunflower oil", "rapeseed oil",
+    "vegetable oil", "sunflower oil", "rapeseed oil", "fat",
 )
