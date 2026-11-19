@@ -163,3 +163,13 @@ def test_catalogue_sync_due():
 def test_status_page_shows_catalogue_card(client):
     html = client.get("/", headers=basic(SECRET)).text
     assert "Recipe catalogue" in html and 'action="/catalogue/sync"' in html
+
+
+def test_mcp_token_guards_only_mcp_paths():
+    token = "t" * 32
+    with TestClient(web.create_app(None, with_mcp=False, background=False, mcp_token=token)) as c:
+        assert c.get("/").status_code == 200                       # pages stay open
+        assert c.post("/mcp").status_code == 401                   # no token
+        assert c.post("/mcp", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        # right token passes the guard (404 here only because MCP isn't mounted in this test)
+        assert c.post("/mcp", headers={"Authorization": f"Bearer {token}"}).status_code == 404

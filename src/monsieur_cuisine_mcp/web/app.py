@@ -103,6 +103,26 @@ class AuthMiddleware:
         await resp(scope, receive, send)
 
 
+class McpTokenGuard:
+    """Requires `Authorization: Bearer <MC_MCP_TOKEN>` on /mcp only.
+
+    Used when /mcp is published to the internet (Tailscale Funnel) so Claude's
+    cloud connectors can reach it, while the web pages stay home-network only.
+    """
+
+    def __init__(self, app, token: str) -> None:
+        self.app, self.token = app, token
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path", "").startswith("/mcp"):
+            headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+            scheme, _, value = headers.get("authorization", "").partition(" ")
+            if scheme.lower() != "bearer" or not hmac.compare_digest(value.strip().encode(), self.token.encode()):
+                await Response("Invalid or missing MCP token", status_code=401)(scope, receive, send)
+                return
+        return await self.app(scope, receive, send)
+
+
 # ------------------------------------------------------------------ pages
 CSS = """
 :root{--bg:#f6f7f9;--fg:#1c1e21;--card:#fff;--muted:#6b7280;--line:#e5e7eb;--acc:#2563eb;--ok:#065f46;--okbg:#d1fae5;--bad:#991b1b;--badbg:#fee2e2}
@@ -172,7 +192,7 @@ async def index(request: Request) -> HTMLResponse:
 "; if renewal fails it signs in again with your saved details (at most every 12h)" if has_saved_credentials() and auto_login_enabled() else ""}.
 {"Log in signs in automatically with your saved details and shows you the browser only if it needs help." if has_saved_credentials() else
  "Add MC_LIDL_EMAIL / MC_LIDL_PASSWORD to ~/.config/mc-mcp.env for one-tap login."}
-MCP endpoint: <code>{html.escape(str(request.base_url))}mcp</code>{" (Bearer = this site's password)" if request.app.state.auth else " (no password)"}.</p>"""
+MCP endpoint: <code>{html.escape(str(request.base_url))}mcp</code>{" (Bearer token required)" if os.environ.get("MC_MCP_TOKEN") else " (Bearer = this site's password)" if request.app.state.auth else " (no password)"}.</p>"""
     return page("Monsieur Cuisine MCP", body)
 
 
@@ -375,8 +395,15 @@ async def _periodic_check(login: RemoteLogin) -> None:
         await asyncio.sleep(MC_WEB_CHECK_INTERVAL_SECONDS)
 
 
-def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = True):
-    """secret=None disables authentication entirely (MC_WEB_NO_AUTH=1)."""
+def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = True,
+               mcp_token: str | None = None):
+    """secret=None disables page authentication (MC_WEB_NO_AUTH=1); mcp_token, if set,
+    is required on /mcp regardless."""
+    app = _create_app(secret, with_mcp=with_mcp, background=background)
+    return McpTokenGuard(app, mcp_token) if mcp_token else app
+
+
+def _create_app(secret: str | None, *, with_mcp: bool, background: bool):
     routes = [
         Route("/", index),
         Route("/check", do_check, methods=["POST"]),
@@ -442,7 +469,10 @@ def main() -> None:
         secret = _password()
         if len(secret) < 8:
             raise SystemExit("Set MC_WEB_PASSWORD (8+ characters), or MC_WEB_NO_AUTH=1 to run without one.")
-    uvicorn.run(create_app(secret), host=args.host, port=args.port, log_level="info", ws="websockets")
+    mcp_token = os.environ.get("MC_MCP_TOKEN", "")
+    if mcp_token and len(mcp_token) < 24:
+        raise SystemExit("MC_MCP_TOKEN must be at least 24 characters.")
+    uvicorn.run(create_app(secret, mcp_token=mcp_token or None), host=args.host, port=args.port, log_level="info", ws="websockets")
 
 
 if __name__ == "__main__":
