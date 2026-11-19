@@ -46,6 +46,14 @@ SPECIAL_KEYS = {
 }
 
 
+def saved_credential(field: str) -> str:
+    """Lidl email/password the user chose to keep in the service's env file
+    (MC_LIDL_EMAIL / MC_LIDL_PASSWORD). Only ever typed into the remote browser,
+    never sent to the web page."""
+    return {"email": os.environ.get("MC_LIDL_EMAIL", ""),
+            "password": os.environ.get("MC_LIDL_PASSWORD", "")}.get(field, "")
+
+
 def clamp_size(width: int, height: int) -> tuple[int, int]:
     """Viewport size for the remote browser, based on the visitor's screen.
     Chrome won't make windows narrower than ~500px, and huge ones waste bandwidth."""
@@ -280,6 +288,10 @@ class RemoteLogin:
                 text = str(msg.get("text", ""))[:500]
                 if text:
                     await cdp.send("Input.insertText", {"text": text})
+            elif kind == "fill":
+                value = saved_credential(str(msg.get("field")))
+                if value:
+                    await cdp.send("Input.insertText", {"text": value})
             elif kind == "key":
                 for ev in key_events(str(msg.get("key"))):
                     await cdp.send("Input.dispatchKeyEvent", ev)

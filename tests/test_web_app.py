@@ -79,3 +79,30 @@ def test_no_auth_mode_serves_without_credentials():
         assert c.get("/").status_code == 200
         with c.websocket_connect("/login/ws") as ws:
             assert '"state": "idle"' in ws.receive_text()
+
+
+def test_fill_buttons_only_when_credentials_saved(client, monkeypatch):
+    monkeypatch.delenv("MC_LIDL_EMAIL", raising=False)
+    monkeypatch.delenv("MC_LIDL_PASSWORD", raising=False)
+    assert "data-fill=\"" not in client.get("/login", headers=basic(SECRET)).text
+    monkeypatch.setenv("MC_LIDL_EMAIL", "me@example.test")
+    monkeypatch.setenv("MC_LIDL_PASSWORD", "hunter2-secret")
+    html = client.get("/login", headers=basic(SECRET)).text
+    assert 'data-fill="email"' in html and 'data-fill="password"' in html
+    # The values themselves never reach the page.
+    assert "me@example.test" not in html and "hunter2-secret" not in html
+
+
+async def test_fill_inserts_saved_value_into_remote_browser(monkeypatch):
+    monkeypatch.setenv("MC_LIDL_PASSWORD", "hunter2-secret")
+    sent = []
+
+    class FakeCDP:
+        async def send(self, method, params=None):
+            sent.append((method, params))
+
+    login = rl.RemoteLogin()
+    login._cdp, login.state = FakeCDP(), "waiting"
+    await login.handle_input({"type": "fill", "field": "password"})
+    await login.handle_input({"type": "fill", "field": "bogus"})
+    assert sent == [("Input.insertText", {"text": "hunter2-secret"})]

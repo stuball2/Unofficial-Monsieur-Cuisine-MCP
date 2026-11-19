@@ -205,14 +205,15 @@ img.addEventListener('pointerup',e=>{ if(!down) return; const dy=down.cy-e.clien
   if(Math.abs(dy)>15) send({type:'wheel',x:down.x,y:down.y,dy:dy*2}); else { send({type:'click',...norm(e)}); kb.focus({preventScroll:true}); }
   down=null;});
 img.addEventListener('wheel',e=>{e.preventDefault(); send({type:'wheel',...norm(e),dy:e.deltaY});},{passive:false});
+// Forward whatever lands in the box (typing, paste, password-manager autofill, dictation), then clear it.
+kb.addEventListener('input',()=>{ if(kb.value){ send({type:'text',text:kb.value}); kb.value=''; } });
 kb.addEventListener('beforeinput',e=>{
-  if(e.inputType==='insertText'&&e.data) send({type:'text',text:e.data});
-  else if(e.inputType==='insertFromPaste'&&e.data) send({type:'text',text:e.data});
-  else if(e.inputType==='deleteContentBackward') send({type:'key',key:'Backspace'});
-  else if(e.inputType==='insertLineBreak') send({type:'key',key:'Enter'});
-  e.preventDefault();});
-kb.addEventListener('paste',e=>{const t=e.clipboardData.getData('text'); if(t) send({type:'text',text:t}); e.preventDefault();});
-kb.addEventListener('keydown',e=>{ if(['Enter','Tab','Escape','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Delete'].includes(e.key)){send({type:'key',key:e.key}); e.preventDefault();}});
+  if(e.inputType==='deleteContentBackward'&&!kb.value){ send({type:'key',key:'Backspace'}); e.preventDefault(); }
+  else if(e.inputType==='insertLineBreak'){ send({type:'key',key:'Enter'}); e.preventDefault(); }});
+kb.addEventListener('keydown',e=>{
+  if(e.key==='Backspace'&&!kb.value){ send({type:'key',key:'Backspace'}); e.preventDefault(); }
+  else if(['Enter','Tab','Escape','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Delete'].includes(e.key)){send({type:'key',key:e.key}); e.preventDefault();}});
+document.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>send({type:'fill',field:b.dataset.fill}));
 document.querySelectorAll('[data-key]').forEach(b=>b.onclick=()=>{send({type:'key',key:b.dataset.key}); kb.focus({preventScroll:true});});
 $('#back').onclick=()=>send({type:'back'}); $('#reload').onclick=()=>send({type:'reload'});
 $('#start').onclick=()=>fetch('/login/start',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -224,6 +225,11 @@ connect();
 
 async def login_page(request: Request) -> HTMLResponse:
     token = sign_ws_token(request.app.state.secret)
+    from .remote_login import saved_credential
+    fill_buttons = "".join(f'<button data-fill="{f}">Insert {f}</button>' for f in ("email", "password")
+                           if saved_credential(f))
+    fill_hint = ('<p class="muted" style="margin:8px 0 0">Tap a field in the Lidl window first, then Insert.</p>'
+                 if fill_buttons else "")
     body = f"""
 <div class="card"><div class="row"><span id="state" class="pill unk">Connecting…</span><span class="muted" id="url"></span></div>
 <p class="muted" style="margin:8px 0 0">This is a real Chrome running on the server. Tap fields, then type with the box below.
@@ -235,7 +241,8 @@ Nothing is typed for you, and your password isn't stored, only the resulting ses
 <div class="card" style="margin-top:8px"><input id="kb" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
  placeholder="Type here → goes into the selected field" style="width:100%;font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)">
 <div class="row" style="justify-content:flex-start;margin-top:8px">
-<button class="alt" data-key="Backspace">⌫</button><button class="alt" data-key="Tab">Tab ⇥</button><button class="alt" data-key="Enter">Enter ↵</button></div></div>
+<button class="alt" data-key="Backspace">⌫</button><button class="alt" data-key="Tab">Tab ⇥</button><button class="alt" data-key="Enter">Enter ↵</button>{fill_buttons}</div>
+{fill_hint}</div>
 <script>const TOKEN={json.dumps(token)};{LOGIN_JS}</script>"""
     return page("Log in – Monsieur Cuisine MCP", body)
 
