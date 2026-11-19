@@ -318,6 +318,7 @@ async def login_interactive(headless: bool = False) -> None:
                 "Session contains %d cookies (count only, no values logged)", len(cookies)
             )
             await context.storage_state(path=str(STORAGE_STATE_PATH))
+            STORAGE_STATE_PATH.chmod(0o600)  # holds live session cookies
             logger.info("Logged in. Session saved to %s", STORAGE_STATE_PATH)
         finally:
             try:

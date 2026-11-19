@@ -13,11 +13,15 @@ dependencies = [
     # dependency of fastmcp, which broke the moment fastmcp 4 switched to httpx2.
     "httpx>=0.28",
     "playwright>=1.45",
+    # Web interface (monsieur-cuisine-mcp-web)
+    "uvicorn>=0.30",
+    "websockets>=13",
 ]
 
 [project.scripts]
 monsieur-cuisine-mcp = "monsieur_cuisine_mcp.server:main"
 monsieur-cuisine-mcp-login = "monsieur_cuisine_mcp.auth:main"
+monsieur-cuisine-mcp-web = "monsieur_cuisine_mcp.web.app:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -19,8 +19,9 @@ answer questions, so make reasonable choices and say what you assumed in your su
    blocks raw sockets, and points HOME at a temp dir. Don't weaken or bypass it.
 3. **Never read or write the real login session** (`~/.monsieur-cuisine-mcp/`,
    `storage_state.json`). Use the `logged_in` / `logged_out` fixtures instead.
-4. **Don't run the login flow or Playwright** (`monsieur-cuisine-mcp-login`). It's
-   interactive and needs a human.
+4. **Don't run the login flow or Playwright** (`monsieur-cuisine-mcp-login`, the web
+   interface's remote login, Xvfb or Chrome). It's interactive and needs a human. Never
+   write code that types credentials, solves CAPTCHAs or fakes bot-protection data.
 5. Every behaviour change ships with tests. Don't delete, skip or `xfail` tests to get
    a green run.
 6. Keep each change scoped to its feature request: no drive-by refactors or renames, and
@@ -32,6 +33,7 @@ answer questions, so make reasonable choices and say what you assumed in your su
 uv sync                          # install (dev deps include pytest, pytest-asyncio, respx)
 uv run pytest -q                 # full offline test suite (what QA1 runs, via .agent-pipeline/test.sh)
 uv run monsieur-cuisine-mcp      # start the MCP server over stdio (humans only, hits live API)
+uv run monsieur-cuisine-mcp-web  # web UI + HTTP MCP on :8090 (needs MC_WEB_PASSWORD; humans only)
 ```
 
 ## Layout
@@ -40,6 +42,11 @@ uv run monsieur-cuisine-mcp      # start the MCP server over stdio (humans only,
   the docstrings are the tool descriptions the LLM sees, so keep them accurate).
 - `src/monsieur_cuisine_mcp/config.py`: URLs, timeouts, paths.
 - `src/monsieur_cuisine_mcp/auth.py`: manual browser login and cookie loading.
+- `src/monsieur_cuisine_mcp/web/`: the always-on service (systemd `mc-mcp`, port 8090):
+  - `app.py`: Starlette app with the status page, `/login` page, Basic/Bearer auth, and the MCP mounted at `/mcp`.
+  - `session.py`: session status, health check and password-free renewal via the Lidl SSO redirect chain.
+  - `remote_login.py`: headed Chrome on Xvfb, streamed to `/login` over a WebSocket using the CDP screencast. A human types.
+  After a merge, `.agent-pipeline/deploy.sh` restarts the service.
 - `src/monsieur_cuisine_mcp/recipes/`:
   - `client.py`: the authenticated `/proxy-api` call plus error translation (`MCRequestError`).
   - `search.py`: public search, filters and `get_recipe` (falls back to the proxy for your own recipes).

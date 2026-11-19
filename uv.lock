@@ -915,6 +915,9 @@ dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "playwright" },
+    { name = "uvicorn" },
+    { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "websockets", version = "17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.dev-dependencies]
@@ -929,6 +932,8 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.0" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "playwright", specifier = ">=1.45" },
+    { name = "uvicorn", specifier = ">=0.30" },
+    { name = "websockets", specifier = ">=13" },
 ]
 
 [package.metadata.requires-dev]

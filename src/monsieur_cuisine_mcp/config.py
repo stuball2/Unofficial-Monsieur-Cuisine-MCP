@@ -70,3 +70,17 @@ MC_BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
+
+# --- Web interface (monsieur-cuisine-mcp-web) -------------------------------
+# Direct entry into the Lidl SSO for the UK English site. Following this URL with
+# still-valid accounts.lidl.com cookies re-issues the Monsieur Cuisine session
+# without showing the login form (used for automatic renewal).
+MC_SSO_LOGIN_URL = f"{MC_BASE_URL}/en/sso/login?redirect_uri={MC_BASE_URL}/en"
+# Landing on this path at the SSO means the Lidl session has lapsed and a human
+# has to log in again.
+MC_SSO_LOGIN_FORM_PATH = "/Account/Login"
+MC_WEB_BROWSER_LOCALE = "en-GB"
+# Status of checks / renewals / logins, shown by the web interface.
+MC_WEB_STATUS_PATH = STATE_DIR / "web_status.json"
+# How often the web service checks the session (and renews it if needed).
+MC_WEB_CHECK_INTERVAL_SECONDS = int(os.environ.get("MC_WEB_CHECK_HOURS", "6")) * 3600
