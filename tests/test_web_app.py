@@ -72,3 +72,10 @@ def test_key_events():
     assert down["type"] == "keyDown" and down["text"] == "\r" and up["type"] == "keyUp"
     with pytest.raises(ValueError):
         rl.key_events("F13")
+
+
+def test_no_auth_mode_serves_without_credentials():
+    with TestClient(web.create_app(None, with_mcp=False, background=False)) as c:
+        assert c.get("/").status_code == 200
+        with c.websocket_connect("/login/ws") as ws:
+            assert '"state": "idle"' in ws.receive_text()

@@ -163,7 +163,7 @@ async def index(request: Request) -> HTMLResponse:
 <a class="btn" href="/login">{"Login in progress…" if login.running else "Log in"}</a>
 </div>
 <p class="muted">Checks run every {MC_WEB_CHECK_INTERVAL_SECONDS // 3600}h and renew automatically when the session stops working.
-MCP endpoint: <code>{html.escape(str(request.base_url))}mcp</code> (Bearer = this site's password).</p>"""
+MCP endpoint: <code>{html.escape(str(request.base_url))}mcp</code>{" (Bearer = this site's password)" if request.app.state.auth else " (no password)"}.</p>"""
     return page("Monsieur Cuisine MCP", body)
 
 
@@ -283,7 +283,8 @@ async def _periodic_check() -> None:
         await asyncio.sleep(MC_WEB_CHECK_INTERVAL_SECONDS)
 
 
-def create_app(secret: str, *, with_mcp: bool = True, background: bool = True) -> AuthMiddleware:
+def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = True):
+    """secret=None disables authentication entirely (MC_WEB_NO_AUTH=1)."""
     routes = [
         Route("/", index),
         Route("/check", do_check, methods=["POST"]),
@@ -317,6 +318,11 @@ def create_app(secret: str, *, with_mcp: bool = True, background: bool = True) -
 
     app = Starlette(routes=routes, lifespan=lifespan)
     app.state.login = RemoteLogin()
+    app.state.auth = secret is not None
+    if secret is None:
+        import secrets as _secrets
+        app.state.secret = _secrets.token_urlsafe(32)  # only signs the page's WebSocket token
+        return app
     app.state.secret = secret
     return AuthMiddleware(app, secret)
 
@@ -328,9 +334,14 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
     setup_logging(logging.DEBUG if args.debug else None)
-    secret = _password()
-    if len(secret) < 8:
-        raise SystemExit("Set MC_WEB_PASSWORD (8+ characters) - this page controls your Lidl session.")
+    if os.environ.get("MC_WEB_NO_AUTH") == "1":
+        secret = None
+        logger.warning("Authentication DISABLED (MC_WEB_NO_AUTH=1): anyone who can reach %s:%s "
+                       "can use your Lidl session.", args.host, args.port)
+    else:
+        secret = _password()
+        if len(secret) < 8:
+            raise SystemExit("Set MC_WEB_PASSWORD (8+ characters), or MC_WEB_NO_AUTH=1 to run without one.")
     uvicorn.run(create_app(secret), host=args.host, port=args.port, log_level="info", ws="websockets")
 
 
