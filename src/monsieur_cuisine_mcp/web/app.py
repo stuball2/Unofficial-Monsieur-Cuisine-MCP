@@ -2,6 +2,7 @@
 
     /             session status, Check / Renew / Log in buttons
     /login        live view of the server-side login browser (works on a phone)
+    /recipes      recipe search + detail pages; /favourites (see recipe_pages.py)
     /mcp          the MCP server over streamable HTTP (Bearer token auth)
 
 Everything requires MC_WEB_PASSWORD: browsers use HTTP Basic (any username), MCP
@@ -30,7 +31,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..config import MC_WEB_CHECK_INTERVAL_SECONDS
 from ..logging_config import setup_logging
-from . import session
+from . import recipe_pages, session
 from .remote_login import RemoteLogin, has_saved_credentials
 
 AUTO_LOGIN_MIN_INTERVAL = 12 * 3600  # background auto-login at most this often
@@ -149,7 +150,7 @@ async def index(request: Request) -> HTMLResponse:
     mc = ", ".join(f'{html.escape(c["name"][:28])} (expires {c["expires"] or "with browser session"})'
                    for c in s.get("mc_cookies", [])) or "none"
     login: RemoteLogin = request.app.state.login
-    body = f"""
+    body = f"""{recipe_pages.NAV}
 <div class="card"><div class="row"><h2>Session</h2>{headline}</div>
 <table>
 <tr><td>Saved session</td><td>{"yes, " + html.escape((s.get("saved_at") or "")[:16].replace("T", " ")) + " UTC" if s["saved"] else "no"}</td></tr>
@@ -339,6 +340,10 @@ def create_app(secret: str | None, *, with_mcp: bool = True, background: bool = 
         Route("/login/go", login_go, methods=["POST"]),
         Route("/login/cancel", login_cancel, methods=["POST"]),
         WebSocketRoute("/login/ws", login_ws),
+        Route("/recipes", recipe_pages.recipes_search),
+        Route("/recipes/{recipe_id:int}", recipe_pages.recipe_detail),
+        Route("/recipes/{recipe_id:int}/favourite", recipe_pages.recipe_favourite, methods=["POST"]),
+        Route("/favourites", recipe_pages.favourites),
     ]
     mcp_app = None
     if with_mcp:
