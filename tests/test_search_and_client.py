@@ -67,3 +67,12 @@ async def test_proxy_errors_are_actionable(mock_http, logged_in, status, body, m
     mock_http.post(MC_PROXY_API_URL).mock(return_value=resp)
     with pytest.raises(recipes.MCRequestError, match=match):
         await recipes.list_favorite_recipes()
+
+
+async def test_public_calls_request_ingredient_names(mock_http, load_fixture):
+    route = mock_http.get(f"{MC_API_BASE_URL}/api/v2/recipes/800001").respond(json=load_fixture("mc3-en-recipe.json"))
+    data = await recipes.get_recipe("800001")
+    req = route.calls.last.request
+    assert req.headers["device-type"] == "web" and req.headers["Accept-Language"] == "en-US"
+    names = [i["name"] for i in data["data"]["recipe"]["servingSizes"][0]["ingredients"]]
+    assert names[:2] == ["Milk", "risotto rice"]

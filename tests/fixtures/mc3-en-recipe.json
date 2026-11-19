@@ -1,0 +1,226 @@
+{
+ "code": 0,
+ "message": "A recipe is returned",
+ "data": {
+  "recipe": {
+   "id": 800001,
+   "translationId": 700001,
+   "language": "en-US",
+   "author": {
+    "id": 1,
+    "name": "Test Kitchen",
+    "avatar": "https://cdn.example.test/avatar.png"
+   },
+   "name": "Test Vanilla Rice Pudding",
+   "status": "publish",
+   "deviceType": "MC3.0",
+   "deviceTypes": [
+    "MC3.0"
+   ],
+   "publishedDate": "2026-01-10 09:00:00",
+   "createdDate": "2026-01-09 09:00:00",
+   "lastUpdated": "2026-02-01 09:00:00",
+   "thumbnail": {
+    "landscape": "https://cdn.example.test/pudding-landscape.jpg",
+    "portrait": null,
+    "landscapeIsAiGenerated": false,
+    "portraitIsAiGenerated": false
+   },
+   "detailsImage": {
+    "landscape": "https://cdn.example.test/pudding-details.jpg",
+    "portrait": null,
+    "landscapeIsAiGenerated": false,
+    "portraitIsAiGenerated": false
+   },
+   "complexity": "Easy",
+   "complexityLevel": 1,
+   "preparationDuration": 5,
+   "duration": 40,
+   "rating": 4.6,
+   "totalRating": 120,
+   "popularity": 0.8,
+   "source": "official",
+   "media": null,
+   "url": "https://www.monsieur-cuisine.com/en/recipes/test-vanilla-rice-pudding",
+   "categories": [
+    {
+     "id": 31,
+     "name": "Desserts"
+    },
+    {
+     "id": 32,
+     "name": "Vegetarian"
+    }
+   ],
+   "copyrightWatermark": null,
+   "tags": [],
+   "description": "A made-up test recipe.",
+   "hintsAndTips": "<p>Serve <b>warm</b>.</p>",
+   "mediaArchiveUrl": "https://cdn.example.test/archive.zip",
+   "mediaArchiveMd5": "00000000000000000000000000000000",
+   "defaultServingSizeId": 51,
+   "nutrients": [],
+   "servingSizes": [
+    {
+     "id": 51,
+     "amount": 4,
+     "servingUnit": "portions",
+     "instruction": "",
+     "preparationDuration": 5,
+     "duration": 40,
+     "modules": [],
+     "ingredientGroups": [],
+     "ingredients": [
+      {
+       "order": 0,
+       "amount": "400",
+       "unit": "g",
+       "systemIngredientId": 9000,
+       "ingredientGroupId": null,
+       "name": "Milk",
+       "ingredientCategory": {
+        "id": 100,
+        "name": "Milk & Dairy",
+        "iconUrl": "https://cdn.example.test/icon.png",
+        "iconPressUrl": "https://cdn.example.test/icon-press.png"
+       },
+       "description": null
+      },
+      {
+       "order": 1,
+       "amount": "100",
+       "unit": "g",
+       "systemIngredientId": 9001,
+       "ingredientGroupId": null,
+       "name": "risotto rice",
+       "ingredientCategory": {
+        "id": 101,
+        "name": "Grains",
+        "iconUrl": "https://cdn.example.test/icon.png",
+        "iconPressUrl": "https://cdn.example.test/icon-press.png"
+       },
+       "description": null
+      },
+      {
+       "order": 2,
+       "amount": "15",
+       "unit": "g",
+       "systemIngredientId": 9002,
+       "ingredientGroupId": null,
+       "name": "sugar",
+       "ingredientCategory": {
+        "id": 102,
+        "name": "Baking",
+        "iconUrl": "https://cdn.example.test/icon.png",
+        "iconPressUrl": "https://cdn.example.test/icon-press.png"
+       },
+       "description": null
+      },
+      {
+       "order": 3,
+       "amount": "1",
+       "unit": "pinch",
+       "systemIngredientId": 9003,
+       "ingredientGroupId": null,
+       "name": "salt",
+       "ingredientCategory": {
+        "id": 103,
+        "name": "Spices",
+        "iconUrl": "https://cdn.example.test/icon.png",
+        "iconPressUrl": "https://cdn.example.test/icon-press.png"
+       },
+       "description": null
+      },
+      {
+       "order": 4,
+       "amount": "0.5",
+       "unit": "tsp",
+       "systemIngredientId": 9004,
+       "ingredientGroupId": null,
+       "name": "vanilla extract",
+       "ingredientCategory": {
+        "id": 104,
+        "name": "Baking",
+        "iconUrl": "https://cdn.example.test/icon.png",
+        "iconPressUrl": "https://cdn.example.test/icon-press.png"
+       },
+       "description": null
+      }
+     ],
+     "steps": [
+      {
+       "id": 1001,
+       "translationId": 2001,
+       "step": 1,
+       "order": 0,
+       "name": "Pour milk",
+       "description": "Pour 400g of milk into the appliance bowl.",
+       "video": null,
+       "deviceSetting": {
+        "reverse": false,
+        "turbo": false,
+        "size": null,
+        "texture": null,
+        "cleaningMode": null,
+        "mode": "scale",
+        "settings": [
+         {
+          "order": 0,
+          "speed": null,
+          "speedFloat": null,
+          "temperature": 0,
+          "time": null,
+          "weight": 400
+         }
+        ]
+       },
+       "ingredients": [],
+       "modules": null
+      },
+      {
+       "id": 1002,
+       "translationId": 2002,
+       "step": 2,
+       "order": 1,
+       "name": "Cook",
+       "description": "Add the rice, sugar, salt and vanilla, then cook.",
+       "video": null,
+       "deviceSetting": {
+        "reverse": true,
+        "turbo": false,
+        "size": null,
+        "texture": null,
+        "cleaningMode": null,
+        "mode": "customized",
+        "settings": [
+         {
+          "order": 0,
+          "speed": 1,
+          "speedFloat": null,
+          "temperature": 90,
+          "time": 1800,
+          "weight": null
+         }
+        ]
+       },
+       "ingredients": [],
+       "modules": null
+      },
+      {
+       "id": 1003,
+       "translationId": 2003,
+       "step": 3,
+       "order": 2,
+       "name": "Serve",
+       "description": "Leave to stand for 5 minutes, then serve.",
+       "video": null,
+       "deviceSetting": null,
+       "ingredients": [],
+       "modules": null
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

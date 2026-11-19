@@ -71,8 +71,8 @@ uv run monsieur-cuisine-mcp-web  # web UI + HTTP MCP on :8090 (needs MC_WEB_PASS
 - Public recipe API (no auth): `https://mc-api.tecpal.com/api/v1/recipes/search/page/{n}`,
   `/api/v1/recipes/filters`, `/api/v2/recipes/{id}`. Category, complexity and
   ingredient-category ids depend on the language, so the same `language` must be used
-  for filters and search. The default language is `pl-PL`. Stu is in the UK, but whether
-  the API serves `en-GB` hasn't been checked, so don't change the default without a feature request asking for it.
+  for filters and search. The default language is `en-US`: the API rejects `en-GB` (422), and `en-US` has about 1,000 Smart (MC3.0) recipes.
+  Public calls must send `device-type: web` (see `search._public_headers`), or every ingredient `name` comes back null.
 - Authoring targets the Monsieur Cuisine Smart (MC3.0, `deviceTypeId` 13) only.
 - The mc-api often returns HTTP 403 for ordinary business errors, with a JSON
   `{"code", "message"}` body. Surface that message instead of assuming an auth failure.

@@ -19,6 +19,12 @@ from .client import MCRequestError, _call_proxy_api
 logger = logging.getLogger(__name__)
 
 
+def _public_headers(language: str) -> dict:
+    # Without `device-type: web` the API returns every ingredient with name=None
+    # (the native apps resolve names from a local database instead).
+    return {"Accept-Language": language, "Accept": "application/json", "device-type": "web"}
+
+
 # Only the Monsieur Cuisine Smart (MC3.0) is supported, so the search device
 # filter accepts just that.
 VALID_DEVICE_TYPES = {"MC3.0"}
@@ -166,7 +172,7 @@ async def search_recipes(
     logger.debug("Searching recipes: url=%s params=%s language=%s", url, params, language)
 
     async with httpx.AsyncClient(timeout=MC_API_REQUEST_TIMEOUT_SECONDS) as client:
-        response = await client.get(url, params=params, headers={"Accept-Language": language})
+        response = await client.get(url, params=params, headers=_public_headers(language))
     response.raise_for_status()
     data = response.json()
 
@@ -198,7 +204,7 @@ async def get_recipe_filters(language: str = MC_API_DEFAULT_LANGUAGE) -> dict:
     logger.debug("Fetching recipe filters: url=%s language=%s", url, language)
 
     async with httpx.AsyncClient(timeout=MC_API_REQUEST_TIMEOUT_SECONDS) as client:
-        response = await client.get(url, headers={"Accept-Language": language})
+        response = await client.get(url, headers=_public_headers(language))
     response.raise_for_status()
     data = response.json()
 
@@ -225,7 +231,7 @@ async def get_recipe(recipe_id: str, language: str = MC_API_DEFAULT_LANGUAGE) ->
     logger.debug("Fetching recipe detail: url=%s language=%s", url, language)
 
     async with httpx.AsyncClient(timeout=MC_API_REQUEST_TIMEOUT_SECONDS) as client:
-        response = await client.get(url, headers={"Accept-Language": language})
+        response = await client.get(url, headers=_public_headers(language))
 
     if response.status_code < 400:
         data = response.json()

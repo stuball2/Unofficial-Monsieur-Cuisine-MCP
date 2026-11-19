@@ -1,0 +1,101 @@
+{
+ "code": 0,
+ "message": "Recipes are returned",
+ "data": {
+  "language": "en-US",
+  "total": 2,
+  "pageSize": 12,
+  "currentPage": 1,
+  "totalPage": 1,
+  "recipes": [
+   {
+    "author": {
+     "id": 1,
+     "name": "Test Kitchen",
+     "avatar": "https://cdn.example.test/avatar.png"
+    },
+    "categories": [
+     {
+      "id": 31,
+      "name": "Desserts"
+     },
+     {
+      "id": 32,
+      "name": "Vegetarian"
+     }
+    ],
+    "complexity": "Easy",
+    "complexityLevel": 1,
+    "copyrightWatermark": null,
+    "createdDate": "2026-01-09 09:00:00",
+    "deviceType": "MC3.0",
+    "deviceTypes": [
+     "MC3.0"
+    ],
+    "duration": 40,
+    "id": 800001,
+    "language": "en-US",
+    "lastUpdated": "2026-02-01 09:00:00",
+    "name": "Test Vanilla Rice Pudding",
+    "popularity": 0.8,
+    "preparationDuration": 5,
+    "publishedDate": "2026-01-10 09:00:00",
+    "rating": 4.6,
+    "source": "official",
+    "status": "publish",
+    "thumbnail": {
+     "landscape": "https://cdn.example.test/pudding-landscape.jpg",
+     "portrait": null,
+     "landscapeIsAiGenerated": false,
+     "portraitIsAiGenerated": false
+    },
+    "totalRating": 120,
+    "translationId": 700001,
+    "url": "https://www.monsieur-cuisine.com/en/recipes/test-vanilla-rice-pudding",
+    "media": null
+   },
+   {
+    "id": 800002,
+    "translationId": 700002,
+    "name": "Test Tomato Soup",
+    "language": "en-US",
+    "deviceType": "MC3.0",
+    "deviceTypes": [
+     "MC3.0"
+    ],
+    "author": {
+     "id": 1,
+     "name": "Test Kitchen",
+     "avatar": null
+    },
+    "categories": [
+     {
+      "id": 33,
+      "name": "Soups"
+     }
+    ],
+    "complexity": "Easy",
+    "complexityLevel": 1,
+    "duration": 25,
+    "preparationDuration": 10,
+    "rating": 4.1,
+    "totalRating": 40,
+    "popularity": 0.5,
+    "source": "official",
+    "status": "publish",
+    "thumbnail": {
+     "landscape": null,
+     "portrait": null,
+     "landscapeIsAiGenerated": false,
+     "portraitIsAiGenerated": false
+    },
+    "media": null,
+    "copyrightWatermark": null,
+    "createdDate": "2026-01-01 09:00:00",
+    "publishedDate": "2026-01-02 09:00:00",
+    "lastUpdated": "2026-01-03 09:00:00",
+    "url": "https://www.monsieur-cuisine.com/en/recipes/test-tomato-soup"
+   }
+  ]
+ }
+}
