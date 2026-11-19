@@ -20,8 +20,11 @@ answer questions, so make reasonable choices and say what you assumed in your su
 3. **Never read or write the real login session** (`~/.monsieur-cuisine-mcp/`,
    `storage_state.json`). Use the `logged_in` / `logged_out` fixtures instead.
 4. **Don't run the login flow or Playwright** (`monsieur-cuisine-mcp-login`, the web
-   interface's remote login, Xvfb or Chrome). It's interactive and needs a human. Never
-   write code that types credentials, solves CAPTCHAs or fakes bot-protection data.
+   interface's remote login, Xvfb or Chrome). It needs the live site and sometimes a
+   human. The only place that enters credentials is `web/remote_login.py`'s auto sign-in.
+   It runs in a real Chrome, uses the user's own saved details, and hands over to the
+   human at anything unexpected. Never write code that solves CAPTCHAs, handles one-time
+   codes, or fakes bot-protection data, and never bypass the 12-hour auto-login limit.
 5. Every behaviour change ships with tests. Don't delete, skip or `xfail` tests to get
    a green run.
 6. Keep each change scoped to its feature request: no drive-by refactors or renames, and
