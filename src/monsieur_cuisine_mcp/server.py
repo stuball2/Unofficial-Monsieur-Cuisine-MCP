@@ -1,9 +1,10 @@
 import argparse
+import asyncio
 import logging
 
 from fastmcp import FastMCP
 
-from . import recipes
+from . import matching, recipes
 from .config import MC_API_DEFAULT_LANGUAGE
 from .logging_config import setup_logging
 
@@ -264,6 +265,42 @@ async def remove_favorite_recipe(translation_id: int, language: str = MC_API_DEF
         language: Locale for the response message, e.g. "pl-PL", "en-US".
     """
     return await recipes.remove_favorite_recipe(translation_id=translation_id, language=language)
+
+
+@mcp.tool
+async def find_recipes_by_ingredients(
+    ingredients: list[str], max_missing: int | None = 3, limit: int = 20
+) -> list[dict]:
+    """"What can I cook?" - rank recipes by how well the ingredients you have
+    cover them.
+
+    Results come from a local copy of the Monsieur Cuisine Smart (MC3.0)
+    recipe catalogue in en-US, synced nightly by the web service - not a live
+    search. If it has not synced yet, the result is an empty list. Give
+    ingredient names in English.
+
+    Matching: names are normalised (lower-case, singular, punctuation and
+    "(...)" notes dropped, so "Carrots" == "carrot"). An ingredient you have
+    matches a recipe ingredient if they are equal or if every word of one
+    appears as a whole word in the other ("tomato" matches "cherry tomato",
+    "chicken breast" matches "chicken"; "pea" does NOT match "peach").
+    Pantry staples (water, salt, pepper, sugar and common oils) never count
+    as missing. Only recipes using at least one of your ingredients are
+    returned, ranked by fewest missing ingredients, then the largest share of
+    the recipe covered, then rating, then name.
+
+    Each result has `id` (pass to get_recipe for the full recipe), `name`,
+    `thumbnail`, `duration` (minutes), `rating`, `servings`, `used` and
+    `missing` (ingredient names as written in the recipe) and `needed_count`
+    (non-pantry ingredients in the recipe).
+
+    Args:
+        ingredients: What you have, e.g. ["chicken breast", "carrots", "rice"].
+        max_missing: Skip recipes missing more than this many ingredients.
+            None means no limit.
+        limit: Maximum number of recipes to return.
+    """
+    return await asyncio.to_thread(matching.find_recipes, ingredients, max_missing=max_missing, limit=limit)
 
 
 @mcp.tool
