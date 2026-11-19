@@ -101,3 +101,11 @@ MC_CATALOGUE_DEVICE = "MC3.0"
 # Seconds between recipe-detail requests during a sync - be nice to the servers.
 MC_CATALOGUE_REQUEST_DELAY = float(os.environ.get("MC_CATALOGUE_DELAY", "1.0"))
 MC_CATALOGUE_SYNC_INTERVAL_SECONDS = 24 * 3600
+
+# "What can I cook?": ingredients assumed to be in every kitchen, so they never count
+# as missing. Matched with the same whole-word rule as the user's ingredients
+# (see matching.py), so e.g. "oil" also covers "olive oil".
+MC_PANTRY_STAPLES = (
+    "water", "salt", "pepper", "black pepper", "sugar", "oil", "olive oil",
+    "vegetable oil", "sunflower oil", "rapeseed oil",
+)

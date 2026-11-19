@@ -420,6 +420,7 @@ def _create_app(secret: str | None, *, with_mcp: bool, background: bool):
         Route("/recipes/{recipe_id:int}", recipe_pages.recipe_detail),
         Route("/recipes/{recipe_id:int}/favourite", recipe_pages.recipe_favourite, methods=["POST"]),
         Route("/favourites", recipe_pages.favourites),
+        Route("/cook", recipe_pages.cook),
     ]
     mcp_app = None
     if with_mcp:

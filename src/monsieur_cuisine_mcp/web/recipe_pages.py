@@ -4,6 +4,7 @@
     /recipes/{id}                  recipe detail with machine settings per step
     /recipes/{id}/favourite        POST add/remove favourite (by translationId)
     /favourites                    the logged-in user's bookmarked recipes
+    /cook                          "What can I cook?" - rank local catalogue recipes by ingredients I have
 
 Everything that comes from the API is untrusted and goes through html.escape.
 """
@@ -15,15 +16,16 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, recipes
-from ..config import MC_API_DEFAULT_LANGUAGE, MC_IMAGE_HOST_REWRITES
+from .. import auth, catalogue, matching, recipes
+from ..config import MC_API_DEFAULT_LANGUAGE, MC_IMAGE_HOST_REWRITES, MC_PANTRY_STAPLES
 
 logger = logging.getLogger(__name__)
 
 DEVICE_TYPE = "MC3.0"
 NAV = ('<nav class="row" style="justify-content:flex-start;margin-bottom:12px">'
        '<a class="btn" href="/">Status</a><a class="btn" href="/recipes">Recipes</a>'
-       '<a class="btn" href="/favourites">Favourites</a></nav>')
+       '<a class="btn" href="/favourites">Favourites</a>'
+       '<a class="btn" href="/cook">What can I cook?</a></nav>')
 RECIPE_CSS = """<style>
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .rcard{display:block;color:inherit;text-decoration:none;padding:0;overflow:hidden}
@@ -380,3 +382,74 @@ async def favourites(request: Request) -> HTMLResponse:
     total = d.get("total", len(items))
     cards = "".join(_recipe_card(r) for r in items) or '<p class="muted">No favourites yet.</p>'
     return _page("Favourites", f'<h2>Favourites</h2><p class="muted">{esc(total)} saved</p><div class="cards">{cards}</div>')
+
+
+# ------------------------------------------------------------------ what can I cook?
+MAX_MISSING_CHOICES = ("0", "1", "2", "3", "5", "any")
+COOK_RESULT_LIMIT = 60
+
+
+def split_ingredients(text: str | None) -> list[str]:
+    """Comma- or newline-separated text -> trimmed, non-empty items."""
+    return [p.strip() for p in re.split(r"[,\n]", text or "") if p.strip()]
+
+
+def _match_card(r: dict) -> str:
+    img = _safe_url(rewrite_image_host(r["thumbnail"])) if r.get("thumbnail") else None
+    img_html = f'<img src="{esc(img)}" alt="" loading="lazy">' if img else ""
+    missing = (f'<div><strong>Missing:</strong> {esc(", ".join(r["missing"]))}</div>' if r["missing"]
+               else '<div class="muted">Nothing missing</div>')
+    return (f'<a class="card rcard" href="/recipes/{quote(str(r.get("id")))}">{img_html}<div class="in">'
+            f'<strong>{esc(r.get("name"))}</strong><div class="muted">{esc(_minutes(r.get("duration")))}'
+            f' {_rating(r)}</div><div><strong>Uses:</strong> {esc(", ".join(r["used"]))}</div>'
+            f'{missing}</div></a>')
+
+
+def _cook_form(have_text: str, pantry_text: str, max_missing: str) -> str:
+    opts = "".join(f'<option value="{v}"{" selected" if v == max_missing else ""}>{v}</option>'
+                   for v in MAX_MISSING_CHOICES)
+    box = "width:100%;box-sizing:border-box"
+    return f"""<h2>What can I cook?</h2>
+<form class="card" method="get" action="/cook" style="display:block">
+<label for="ingredients">Ingredients I have (comma or newline separated)</label>
+<textarea id="ingredients" name="ingredients" rows="4" style="{box};font:inherit;padding:9px;border-radius:8px"
+ placeholder="e.g. chicken, carrots, rice">{esc(have_text)}</textarea>
+<div class="row" style="justify-content:flex-start;margin:8px 0">
+<label>Max missing <select name="max_missing">{opts}</select></label>
+<button>Find recipes</button></div>
+<label for="pantry" class="muted">Pantry staples (never count as missing)</label>
+<input id="pantry" name="pantry" value="{esc(pantry_text)}" style="{box}">
+</form>"""
+
+
+async def cook(request: Request) -> HTMLResponse:
+    qp = request.query_params
+    have_text = qp.get("ingredients", "")
+    # Pantry not submitted -> defaults; submitted empty -> no staples at all.
+    pantry_text = qp["pantry"] if "pantry" in qp else ", ".join(MC_PANTRY_STAPLES)
+    mm = qp.get("max_missing", "3")
+    if mm not in MAX_MISSING_CHOICES:
+        mm = "3"
+    form = _cook_form(have_text, pantry_text, mm)
+    title = "What can I cook?"
+
+    try:
+        count = catalogue.stats()["recipes"]
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not read the recipe catalogue", exc_info=True)
+        return _page(title, form + _error_card("Could not read the local recipe catalogue."))
+    if not count:
+        return _page(title, form + '<div class="card msg">The recipe catalogue hasn\'t synced yet. '
+                                   'Check its progress (or start a sync) on the <a href="/">status page</a>.</div>')
+
+    have = split_ingredients(have_text)
+    if not have:
+        return _page(title, form + f'<p class="muted">{esc(count)} recipes in the local catalogue. '
+                                   'Enter some ingredients to get started.</p>')
+    results = matching.find_recipes(have, pantry=split_ingredients(pantry_text),
+                                    max_missing=None if mm == "any" else int(mm), limit=COOK_RESULT_LIMIT)
+    cards = "".join(_match_card(r) for r in results) or \
+        '<p class="muted">No matching recipes. Try allowing more missing ingredients.</p>'
+    n = len(results)
+    return _page(title, form + f'<p class="muted">{n} recipe{"" if n == 1 else "s"} found</p>'
+                               f'<div class="cards">{cards}</div>')
